@@ -12,7 +12,7 @@
 var AB = (function () {
   'use strict';
 
-  var CLASSES = ['CRE', 'Class 7', 'Class 6', 'Class 5', 'Class 4', 'Class 3', 'Class 2', 'Class 1'];
+  var CLASSES = ['CRE', 'Class 7', 'Class 6', 'Class 5', 'Class 4', 'Class 3', 'Class 2', 'Class 1', 'Rawdha 2', 'Rawdha 1'];
   var GROUPS = ['Senior (Age 14+)', 'Junior (Age 11-13)', 'Sub-Junior (Age 8-10)', 'Kids (Age 5-7)'];
   var GENDERS = ['Boys', 'Girls'];
   var SPORTS = ['Football', 'VolleyBall', 'Tug of War', 'Arm Wrestling', 'Sack Race', 'Lemon & Spoon',
