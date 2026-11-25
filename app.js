@@ -296,8 +296,9 @@
           st.textContent = '.pass-frame .pass{box-shadow:none!important;margin:0 auto!important;border:1.5px solid #E2E6DF}' +
             '.pass-frame .pass .big::before,.pass-frame .pass .big::after{background:#ffffff!important;border:1.5px solid #E2E6DF}' +
             '.pass-frame .pass .big::before{left:-13px!important}.pass-frame .pass .big::after{right:-13px!important}' +
-            '.pass-frame .pass .entries div{display:block!important;line-height:22px;padding:9px 12px 11px!important;overflow:hidden}' +
-            '.pass-frame .pass .entries code{display:inline-block;width:80px}.pass-frame .pass .entries .pill{float:right;line-height:18px}';
+            '.pass-frame .pass .entries div{display:block!important;line-height:22px;padding:6px 12px 14px!important;overflow:hidden}' +
+            '.pass-frame .pass .entries code{display:inline-block;width:80px}.pass-frame .pass .entries div{position:relative}' +
+            '.pass-frame .pass .entries .pill{position:absolute;right:12px;top:9px;line-height:16px;padding:1px 10px 7px}';
           doc.head.appendChild(st);
         } });
     }).then(function (canvas) {
