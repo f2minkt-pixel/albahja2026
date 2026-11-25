@@ -17,9 +17,13 @@ var AB = (function () {
   var GENDERS = ['Boys', 'Girls'];
   var SPORTS = ['Football', 'VolleyBall', 'Tug of War', 'Arm Wrestling', 'Sack Race', 'Lemon & Spoon',
     'Musical Chair (Without Music)', 'Kabaddi'];
-  var ARTS_GIRLS = ['Skit', 'Speech - English', 'Speech - Malayalam', 'Speech - Arabic', 'Song - Malayalam',
-    'Song - Arabic', 'Group Song - Arabic', 'Group Song - Malayalam', 'Story Telling', 'Quran Recitation'];
-  var ARTS_BOYS = ARTS_GIRLS.concat(['Mime']);
+  var ARTS_BOYS = ['Skit', 'Speech - English', 'Speech - Malayalam', 'Speech - Arabic', 'Song - Malayalam',
+    'Song - Arabic', 'Group Song - Arabic', 'Group Song - Malayalam', 'Story Telling', 'Quran Recitation', 'Mime'];
+  var ARTS_GIRLS = ['Islamic Speech - Malayalam', 'Islamic Speech - Arabic', 'Islamic Speech - English', 'Islamic Song - Malayalam', 'Islamic Song - Arabic', 'Islamic Song - English', 'Group Song',
+    'Story Telling', 'Action Song', 'Dua', 'Hadees', 'Quran Recitation', 'Skit',
+    'Quran Recitation with Translation', 'Hadees with Translation'];
+  // Every arts item once; boys' items keep codes A01–A11, girls-only items follow (A12+).
+  var ARTS_ALL = ARTS_BOYS.concat(ARTS_GIRLS.filter(function (x) { return ARTS_BOYS.indexOf(x) < 0; }));
   var MAX_PER_CATEGORY = 3;
   var SCREENING = ['Confirmed Reg', 'Screening Pending', 'Need Practice', 'Selected for Program'];
   var PRESENT = 'Present', ABSENT = 'Not Present';
@@ -28,12 +32,19 @@ var AB = (function () {
   function programCode(program) {
     var i = SPORTS.indexOf(program);
     if (i >= 0) return 'S' + pad2(i + 1);
-    i = ARTS_BOYS.indexOf(program);
+    i = ARTS_ALL.indexOf(program);
     if (i >= 0) return 'A' + pad2(i + 1);
     return 'X';
   }
   function categoryOf(program) { return SPORTS.indexOf(program) >= 0 ? 'Sports' : 'Arts'; }
-  function allPrograms() { return SPORTS.concat(ARTS_BOYS); }
+  function allPrograms() { return SPORTS.concat(ARTS_ALL); }
+  /** Which genders can enter a program. */
+  function gendersFor(program) {
+    var g = [];
+    if (SPORTS.indexOf(program) >= 0 || ARTS_BOYS.indexOf(program) >= 0) g.push('Boys');
+    if (ARTS_GIRLS.indexOf(program) >= 0) g.push('Girls');
+    return g;
+  }
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
   var SCHEMA = {
@@ -382,7 +393,7 @@ var AB = (function () {
   }
 
   return {
-    CLASSES: CLASSES, GROUPS: GROUPS, GENDERS: GENDERS, SPORTS: SPORTS, ARTS_BOYS: ARTS_BOYS, ARTS_GIRLS: ARTS_GIRLS,
+    CLASSES: CLASSES, GROUPS: GROUPS, GENDERS: GENDERS, SPORTS: SPORTS, ARTS_BOYS: ARTS_BOYS, ARTS_GIRLS: ARTS_GIRLS, ARTS_ALL: ARTS_ALL, gendersFor: gendersFor,
     MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle

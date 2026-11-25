@@ -12,7 +12,9 @@
   }
   function progOpts(sel, all) {
     return (all ? '<option value="">' + esc(all) + '</option>' : '') +
-      '<optgroup label="Sports (Boys)">' + opts(AB.SPORTS, sel) + '</optgroup><optgroup label="Arts">' + opts(AB.ARTS_BOYS, sel) + '</optgroup>';
+      '<optgroup label="Sports (Boys)">' + opts(AB.SPORTS, sel) + '</optgroup>' +
+      '<optgroup label="Arts – Boys">' + opts(AB.ARTS_BOYS, sel) + '</optgroup>' +
+      '<optgroup label="Arts – Girls only">' + opts(AB.ARTS_GIRLS.filter(function (x) { return AB.ARTS_BOYS.indexOf(x) < 0; }), sel) + '</optgroup>';
   }
   if (DEMO) $('#demoBar').hidden = false;
 
@@ -466,12 +468,12 @@
     var isAdmin = s.role === 'admin';
     var program = isAdmin ? (J.program || AB.ARTS_BOYS[0]) : s.program;
     J.program = program;
-    var cat = AB.categoryOf(program), girlsOk = cat === 'Arts' && AB.ARTS_GIRLS.indexOf(program) >= 0;
-    if (!girlsOk) J.gender = 'Boys';
+    var cat = AB.categoryOf(program), allowed = AB.gendersFor(program);
+    if (allowed.indexOf(J.gender) < 0) J.gender = allowed[0] || 'Boys';
     view.innerHTML = head('Judge scoring', 'Judging: ' + esc(program) + ' ' + catPill(cat), 'Score each chest number out of 100. You can change your marks until results are final.', s) +
       '<div class="toolbar" style="grid-template-columns:' + (isAdmin ? '1.4fr ' : '') + 'auto 1fr auto">' +
       (isAdmin ? '<select class="in" id="jProg">' + progOpts(program) + '</select>' : '') +
-      '<div class="seg" id="jGender">' + AB.GENDERS.map(function (g) { var dis = g === 'Girls' && !girlsOk; return '<button data-g="' + g + '" class="' + (J.gender === g ? 'on' : '') + '"' + (dis ? ' disabled title="Boys only" style="opacity:.4"' : '') + '>' + g + '</button>'; }).join('') + '</div>' +
+      '<div class="seg" id="jGender">' + AB.GENDERS.map(function (g) { var dis = allowed.indexOf(g) < 0; return '<button data-g="' + g + '" class="' + (J.gender === g ? 'on' : '') + '"' + (dis ? ' disabled title="' + esc(allowed[0] || '') + ' only" style="opacity:.4"' : '') + '>' + g + '</button>'; }).join('') + '</div>' +
       '<select class="in" id="jGroup">' + opts(AB.GROUPS, J.group, 'All age groups') + '</select>' +
       '<label class="pick' + (J.selectedOnly ? ' on' : '') + '" style="min-height:46px"><input type="checkbox" id="jSel"' + (J.selectedOnly ? ' checked' : '') + '>Selected for program only</label></div>' +
       '<div class="list" id="jList"><div class="loading"><span class="spin dark"></span></div></div>' +
