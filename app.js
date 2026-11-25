@@ -178,7 +178,7 @@
     var b = $('#stepBody'); if (!b) return;
     if (R.step === 1) {
       b.innerHTML =
-        '<div class="field"><label class="f" for="r_name">Full name <em>*</em></label><input class="in' + (R.err.name ? ' err' : '') + '" id="r_name" name="name" autocomplete="name" value="' + esc(R.name) + '" placeholder="Student\'s full name">' + errMsg('name') + '</div>' +
+        '<div class="field"><label class="f" for="r_name">Full name <em>*</em></label><input class="in' + (R.err.name ? ' err' : '') + '" id="r_name" name="name" autocomplete="name" value="' + esc(R.name) + '" placeholder="e.g. Fathima Rahman">' + (errMsg('name') || '<div class="hint">First name and family name, as it should appear on the certificate.</div>') + '</div>' +
         '<div class="field"><span class="f" style="display:block;font-weight:600;font-size:13.5px;margin-bottom:6px">Gender <em style="color:var(--bad);font-style:normal">*</em></span><div class="seg big" role="radiogroup">' +
         AB.GENDERS.map(function (g) { return '<button type="button" role="radio" aria-checked="' + (R.gender === g) + '" data-gender="' + g + '" class="' + (R.gender === g ? 'on' : '') + '">' + g + '</button>'; }).join('') + '</div>' + errMsg('gender') + '</div>' +
         '<div class="field"><label class="f" for="r_phone">Parent\'s phone number <em>*</em></label><input class="in' + (R.err.phone ? ' err' : '') + '" id="r_phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" value="' + esc(R.phone) + '" placeholder="05XXXXXXXX">' + (errMsg('phone') || '<div class="hint">Saudi mobile (05XXXXXXXX) or international number with country code.</div>') + '</div>' +
@@ -215,7 +215,7 @@
   }
   function validateStep1() {
     var e = {};
-    if (R.name.trim().length < 2) e.name = 'Please enter the full name.';
+    if (!AB.isFullName(R.name)) e.name = 'Please enter the full name — first name and family name (at least 2 words).';
     if (!R.gender) e.gender = 'Please choose Boys or Girls.';
     var ph = R.phone.replace(/\D/g, '');
     if (!/^\d{9,15}$/.test(ph)) e.phone = 'Enter a valid phone number (9–15 digits).';
@@ -279,19 +279,29 @@
   }
   function savePassImage(btn, g) {
     busy(btn, true, 'Saving…');
+    var frame;
     loadH2C().then(function () {
-      var el = $('#pass');
-      return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 620,
+      // Copy the pass into an off-screen white frame so the image has blank space around it, like the preview.
+      frame = document.createElement('div');
+      frame.className = 'pass-frame';
+      frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;padding:40px;background:#ffffff';
+      var copy = $('#pass').cloneNode(true);
+      copy.removeAttribute('id');
+      frame.appendChild(copy);
+      document.body.appendChild(frame);
+      return window.html2canvas(frame, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 720,
         onclone: function (doc) {
-          // html2canvas draws shadows and the ticket notches as grey blocks, so drop them in the saved copy.
+          // html2canvas paints soft shadows as grey blocks: use a thin border instead; notches match the white frame.
           var st = doc.createElement('style');
-          st.textContent = '.pass{box-shadow:none!important;margin:0!important;width:560px!important;border-radius:0!important}' +
-            '.pass .big::before,.pass .big::after{display:none!important}.pass *{box-shadow:none!important}' +
-            '.pass .entries div{display:block!important;line-height:22px;padding:9px 12px 11px!important;overflow:hidden}' +
-            '.pass .entries code{display:inline-block;width:80px}.pass .entries .pill{float:right;line-height:18px}';
+          st.textContent = '.pass-frame .pass{box-shadow:none!important;margin:0 auto!important;border:1.5px solid #E2E6DF}' +
+            '.pass-frame .pass .big::before,.pass-frame .pass .big::after{background:#ffffff!important;border:1.5px solid #E2E6DF}' +
+            '.pass-frame .pass .big::before{left:-13px!important}.pass-frame .pass .big::after{right:-13px!important}' +
+            '.pass-frame .pass .entries div{display:block!important;line-height:22px;padding:9px 12px 11px!important;overflow:hidden}' +
+            '.pass-frame .pass .entries code{display:inline-block;width:80px}.pass-frame .pass .entries .pill{float:right;line-height:18px}';
           doc.head.appendChild(st);
         } });
     }).then(function (canvas) {
+      if (frame) frame.remove();
       canvas.toBlob(function (blob) {
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -301,6 +311,7 @@
         busy(btn, false); toast('Pass saved as an image');
       }, 'image/png');
     }).catch(function () {
+      if (frame) frame.remove();
       busy(btn, false); toast('Could not save the image — use Print pass and choose "Save as PDF".', true);
     });
   }

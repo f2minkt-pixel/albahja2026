@@ -65,6 +65,14 @@ var AB = (function () {
   };
 
   // ---------- helpers ----------
+  /** Full name = at least two words, each with 2+ letters (e.g. "Fathima Rahman"). */
+  function isFullName(s) {
+    var words = String(s || '').replace(/[.\-']/g, ' ').trim().split(/\s+/)
+      .filter(function (w) { return w.replace(/[^\p{L}]/gu, '').length >= 2; });
+    return words.length >= 2;
+  }
+  /** Name key for duplicate checks: ignores case, extra spaces and dots. */
+  function nameKey(s) { return String(s || '').toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function fail(msg) { var e = new Error(msg); e.userFacing = true; throw e; }
   function clean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max || 120); }
   function normPhone(s) { return String(s == null ? '' : s).replace(/\D/g, ''); }
@@ -160,7 +168,7 @@ var AB = (function () {
   // ---------- actions ----------
   function register(db, env, p) {
     var name = clean(p.name, 80), gender = p.gender, cls = p.cls, group = p.group, phone = normPhone(p.phone);
-    if (name.length < 2) fail('Please enter the student\'s full name.');
+    if (!isFullName(name)) fail('Please enter the student\'s full name (first name and family name).');
     if (GENDERS.indexOf(gender) < 0) fail('Please choose Boys or Girls.');
     if (!validPhone(phone)) fail('Please enter a valid parent phone number (9–15 digits).');
     if (CLASSES.indexOf(cls) < 0) fail('Please choose the class in Madrasa.');
@@ -175,7 +183,8 @@ var AB = (function () {
     if (!sports.length && !arts.length) fail('Please select at least one item.');
 
     var regs = db.load('Registrations');
-    var dup = regs.filter(function (r) { return same(normPhone(r.phone), phone) && clean(r.name).toLowerCase() === name.toLowerCase(); })[0];
+    // Same phone is fine (siblings); only the same name AND the same phone is a duplicate.
+    var dup = regs.filter(function (r) { return same(normPhone(r.phone), phone) && nameKey(r.name) === nameKey(name); })[0];
     if (dup) fail(name + ' is already registered with this phone number (Chest No ' + dup.chest + ').');
 
     var used = {}; regs.forEach(function (r) { used[String(r.chest)] = 1; });
@@ -320,7 +329,7 @@ var AB = (function () {
     var patch = p.patch || {}, regs = db.load('Registrations'), reg = null;
     regs.forEach(function (r) { if (same(r.chest, p.chest)) reg = r; });
     if (!reg) fail('Chest number not found.');
-    if (patch.name != null) { var n = clean(patch.name, 80); if (n.length < 2) fail('Name is too short.'); reg.name = n; }
+    if (patch.name != null) { var n = clean(patch.name, 80); if (!isFullName(n)) fail('Please enter the full name (first name and family name).'); reg.name = n; }
     if (patch.phone != null) { var ph = normPhone(patch.phone); if (!validPhone(ph)) fail('Invalid phone.'); reg.phone = ph; }
     if (patch.cls != null) { if (CLASSES.indexOf(patch.cls) < 0) fail('Invalid class.'); reg.cls = patch.cls; }
     if (patch.group != null) { if (GROUPS.indexOf(patch.group) < 0) fail('Invalid group.'); reg.group = patch.group; }
@@ -396,6 +405,7 @@ var AB = (function () {
     CLASSES: CLASSES, GROUPS: GROUPS, GENDERS: GENDERS, SPORTS: SPORTS, ARTS_BOYS: ARTS_BOYS, ARTS_GIRLS: ARTS_GIRLS, ARTS_ALL: ARTS_ALL, gendersFor: gendersFor,
     MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
-    computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle
+    computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
+    isFullName: isFullName
   };
 })();
