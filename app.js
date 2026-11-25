@@ -123,6 +123,7 @@
   function route() {
     var v = location.hash.replace('#', '') || 'register';
     if (!VIEWS[v]) v = 'register';
+    document.body.dataset.view = v;
     $$('#nav a').forEach(function (a) { a.classList.toggle('on', a.dataset.v === v); });
     clearInterval(timer); timer = null;
     view.onclick = view.onchange = view.oninput = view.onkeydown = null;
@@ -141,18 +142,7 @@
   function freshReg() { return { step: 1, name: '', gender: '', phone: '', cls: '', group: '', sports: [], arts: [], err: {}, receipt: null }; }
 
   function hero() {
-    return '<section class="hero"><div class="stamp">' +
-      '<img class="sarga" src="assets/sarga.png" alt="Sarga Vasantham 2026-27">' +
-      '<div class="meet"><img src="assets/logo.png" alt="Al Bahja"><div class="t" lang="ml">മദ്രസ മീറ്റ് - 26</div></div>' +
-      '<div class="when"><div class="chip ml" lang="ml">ഡിസംബർ<span class="day">4</span>വെള്ളി</div>' +
-      '<div class="chip"><b>Fri, 4 Dec 2026</b></div>' +
-      '<div class="chip">Saihat Istiraha · Dhahran–Jubail Highway</div></div></div>' +
-      '<div class="hero-side"><div class="card"><div class="eyebrow">Student registration</div><h2 style="margin:4px 0 8px">Join the Madrasa Meet</h2>' +
-      '<p class="muted small" style="margin:0 0 14px">Arts & sports for every age group. Pick up to <b>3 Arts</b> and (boys) <b>3 Sports</b> items. You\'ll get a chest number straight away.</p>' +
-      '<div class="quick"><a href="#scoreboard"><b>Live Scoreboard</b><span>Results as judges score</span></a>' +
-      '<a href="#volunteer"><b>Check-In Desk</b><span>For volunteers</span></a>' +
-      '<a href="#teacher"><b>Teacher Screening</b><span>Access code needed</span></a>' +
-      '<a href="#judge"><b>Judges</b><span>Score by chest number</span></a></div></div></div></section>';
+    return '';
   }
 
   function viewRegister() {
