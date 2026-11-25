@@ -82,14 +82,16 @@ var AB = (function () {
   function uniq(arr) { var o = []; (arr || []).forEach(function (x) { x = String(x); if (o.indexOf(x) < 0) o.push(x); }); return o; }
   function round2(n) { return Math.round(n * 100) / 100; }
 
-  function pickChest(used, rnd) {
-    var hi = 999;
-    while (used.size >= (hi - 100) * 0.8) hi = hi * 10 + 9; // widen when nearly full
-    for (var tries = 0; tries < 5000; tries++) {
-      var n = 101 + Math.floor(rnd() * (hi - 100));
-      if (!used.has(String(n))) return n;
+  // Chest numbers never mix: boys 100–499, girls 500–999 (overflow: boys 1000–1499, girls 1500–1999).
+  var CHEST_RANGES = { Boys: [[100, 499], [1000, 1499]], Girls: [[500, 999], [1500, 1999]] };
+  function pickChest(used, rnd, gender) {
+    var ranges = CHEST_RANGES[gender] || CHEST_RANGES.Boys;
+    for (var r = 0; r < ranges.length; r++) {
+      var lo = ranges[r][0], hi = ranges[r][1], free = [];
+      for (var n = lo; n <= hi; n++) if (!used.has(String(n))) free.push(n);
+      if (free.length) return free[Math.floor(rnd() * free.length)];
     }
-    for (var m = 101; ; m++) if (!used.has(String(m))) return m;
+    fail('All chest numbers for ' + gender + ' are used. Please contact the organisers.');
   }
 
   // ---------- results ----------
@@ -188,7 +190,7 @@ var AB = (function () {
     if (dup) fail(name + ' is already registered with this phone number (Chest No ' + dup.chest + ').');
 
     var used = {}; regs.forEach(function (r) { used[String(r.chest)] = 1; });
-    var chest = pickChest({ has: function (k) { return !!used[k]; }, size: regs.length }, env.random);
+    var chest = pickChest({ has: function (k) { return !!used[k]; } }, env.random, gender);
     var ts = env.now();
     var reg = { ts: ts, chest: chest, name: name, gender: gender, cls: cls, group: group, phone: phone,
       sports: sports.join(', '), arts: arts.join(', '), checkin: ABSENT, notes: '', checkinBy: '', checkinAt: '' };
