@@ -255,11 +255,54 @@
       en.map(function (x) { return '<div><code>' + esc(x.entry) + '</code><span class="grow">' + esc(x.program) + '</span>' + catPill(x.category) + '</div>'; }).join('') + '</div></div>' +
       '<div class="foot">Parent phone: ' + esc(g.phone) + ' · Registered ' + esc(g.ts) + '<br>Fri, 4 Dec 2026 · Saihat Istiraha, Dhahran–Jubail Highway. Please show this pass at the check-in desk.' +
       (R.emailed === false ? '<br><b style="color:var(--bad)">Saved, but the email copy could not be sent.</b>' : '') + '</div></div>' +
-      '<div class="row noprint" style="justify-content:center;margin-top:18px"><button class="btn ghost" id="printPass">Print / save pass</button><button class="btn" id="another">Register another student</button></div>';
+      '<div class="row noprint" style="justify-content:center;margin-top:18px">' +
+      '<button class="btn ghost" id="printPass">Print pass</button>' +
+      '<button class="btn gold" id="savePass">Save pass</button>' +
+      '<button class="btn" id="another">Register another student</button></div>';
     view.onclick = function (e) {
       if (e.target.closest('#printPass')) window.print();
+      if (e.target.closest('#savePass')) savePassImage(e.target.closest('#savePass'), g);
       if (e.target.closest('#another')) { R = freshReg(); viewRegister(); window.scrollTo(0, 0); }
     };
+  }
+
+  /** Downloads the pass as a PNG image (html2canvas is loaded only when needed). */
+  var h2cLoading = null;
+  function loadH2C() {
+    if (window.html2canvas) return Promise.resolve();
+    return h2cLoading || (h2cLoading = new Promise(function (ok, fail) {
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload = ok; s.onerror = function () { h2cLoading = null; fail(); };
+      document.head.appendChild(s);
+    }));
+  }
+  function savePassImage(btn, g) {
+    busy(btn, true, 'Saving…');
+    loadH2C().then(function () {
+      var el = $('#pass');
+      return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, windowWidth: 620,
+        onclone: function (doc) {
+          // html2canvas draws shadows and the ticket notches as grey blocks, so drop them in the saved copy.
+          var st = doc.createElement('style');
+          st.textContent = '.pass{box-shadow:none!important;margin:0!important;width:560px!important;border-radius:0!important}' +
+            '.pass .big::before,.pass .big::after{display:none!important}.pass *{box-shadow:none!important}' +
+            '.pass .entries div{display:block!important;line-height:22px;padding:9px 12px 11px!important;overflow:hidden}' +
+            '.pass .entries code{display:inline-block;width:80px}.pass .entries .pill{float:right;line-height:18px}';
+          doc.head.appendChild(st);
+        } });
+    }).then(function (canvas) {
+      canvas.toBlob(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'AlBahja-Pass-Chest-' + g.chest + '.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        busy(btn, false); toast('Pass saved as an image');
+      }, 'image/png');
+    }).catch(function () {
+      busy(btn, false); toast('Could not save the image — use Print pass and choose "Save as PDF".', true);
+    });
   }
 
   // =====================================================================
