@@ -58,9 +58,10 @@
   }
 
   // ---------- small components ----------
+  function ciLook(st) { return st === AB.PRESENT ? ['in', 'Present'] : st === AB.CHECKED_OUT ? ['done', 'Checked out'] : ['out', 'Not Present']; }
   function ci(chest, st) {
-    var on = st === AB.PRESENT;
-    return '<span class="ci ' + (on ? 'in' : 'out') + '" data-ci="' + esc(chest) + '">' + (on ? 'Present' : 'Not Present') + '</span>';
+    var l = ciLook(st);
+    return '<span class="ci ' + l[0] + '" data-ci="' + esc(chest) + '">' + l[1] + '</span>';
   }
   /** "Show: All | Boys | Girls | Rawdha" buttons — only changes what you see. */
   function secSeg(cur, id) {
@@ -86,8 +87,8 @@
   }
   function updateBadges() {
     $$('[data-ci]').forEach(function (el) {
-      var on = checkinOf(el.dataset.ci) === AB.PRESENT;
-      el.className = 'ci ' + (on ? 'in' : 'out'); el.textContent = on ? 'Present' : 'Not Present';
+      var l = ciLook(checkinOf(el.dataset.ci));
+      el.className = 'ci ' + l[0]; el.textContent = l[1];
     });
   }
   function editingIn(el) {
@@ -507,7 +508,7 @@
       fld('Volunteer name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required'), 'Open check-in desk');
     view.innerHTML = head('Check-in desk', 'Volunteer Check-In', 'Search by chest number, name or phone. You can mark attendance and add notes — registration details stay locked.', s) +
       '<div class="stats" id="vStats"></div>' + secSeg(V.sec, 'vSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" id="vq" type="search" inputmode="search" placeholder="Chest no., name or phone" value="' + esc(V.q) + '" autocomplete="off"></div>' +
-      '<div class="row" style="margin-bottom:14px"><div class="seg" id="vShow">' + [['', 'All'], [AB.PRESENT, 'Present'], [AB.ABSENT, 'Not Present']].map(function (x) {
+      '<div class="row" style="margin-bottom:14px"><div class="seg" id="vShow">' + [['', 'All'], [AB.PRESENT, 'Present'], [AB.ABSENT, 'Not Present'], [AB.CHECKED_OUT, 'Checked out']].map(function (x) {
         return '<button data-show="' + x[0] + '" class="' + (V.show === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
       }).join('') + '</div><span class="count grow" id="vCount" style="margin:0;text-align:right"></span></div>' +
       '<div class="list" id="vList"><div class="loading"><span class="spin dark"></span></div></div>';
@@ -517,6 +518,7 @@
     view.onclick = function (e) {
       var sc = pickSec(e, 'vSec'); if (sc != null) { V.sec = sc; paintVolunteer(); return; }
       var sh = e.target.closest('[data-show]'); if (sh) { V.show = sh.dataset.show; $$('#vShow button').forEach(function (b) { b.classList.toggle('on', b === sh); }); paintVolunteer(); return; }
+      var co = e.target.closest('[data-checkout]'); if (co) { checkOut(co, s); return; }
       var tg = e.target.closest('[data-toggle]'); if (tg) { toggleCheckin(tg, s); return; }
       var an = e.target.closest('[data-addnote]'); if (an) addNote(an.dataset.addnote, s);
     };
@@ -527,7 +529,9 @@
     if (!D || !$('#vList')) return;
     var regs = D.registrations || [];
     var pres = regs.filter(function (r) { return r.checkin === AB.PRESENT; }).length;
-    $('#vStats').innerHTML = '<div class="stat"><b>' + regs.length + '</b><span>Registered</span></div><div class="stat g"><b>' + pres + '</b><span>Present</span></div><div class="stat r"><b>' + (regs.length - pres) + '</b><span>Not present</span></div>';
+    var outs = regs.filter(function (r) { return r.checkin === AB.CHECKED_OUT; }).length;
+    $('#vStats').innerHTML = '<div class="stat"><b>' + regs.length + '</b><span>Registered</span></div><div class="stat g"><b>' + pres + '</b><span>Present</span></div>' +
+      '<div class="stat r"><b>' + (regs.length - pres - outs) + '</b><span>Not present</span></div><div class="stat"><b>' + outs + '</b><span>Checked out</span></div>';
     var q = V.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
     var list = regs.filter(function (r) {
       if (V.show && r.checkin !== V.show) return false;
@@ -540,28 +544,46 @@
     });
     $('#vCount').textContent = list.length + ' student' + (list.length === 1 ? '' : 's');
     $('#vList').innerHTML = list.length ? list.slice(0, 150).map(function (r) {
-      var on = r.checkin === AB.PRESENT;
+      var on = r.checkin === AB.PRESENT, gone = r.checkin === AB.CHECKED_OUT;
       var items = AB.splitItems(r.sports).concat(AB.splitItems(r.arts));
+      var hhmm = function (t) { return esc(String(t || '').slice(11, 16)); };
       return '<div class="vcard"><span class="chest lg">' + esc(r.chest) + '</span><div><div class="row" style="gap:8px"><b style="font-size:16px">' + esc(r.name) + '</b>' + ci(r.chest, r.checkin) + '</div>' +
         '<div class="meta small muted" style="margin-top:3px">' + esc(r.gender) + ' · ' + esc(r.cls) + ' · ' + esc(shortGroup(r.group)) + ' · ' + esc(r.phone) + '</div>' +
         '<div class="small" style="margin-top:6px">' + items.map(esc).join(' · ') + '</div>' +
-        (on && r.checkinAt ? '<div class="small muted" style="margin-top:4px">Checked in ' + esc(String(r.checkinAt).slice(11, 16)) + ' by ' + esc(r.checkinBy) + '</div>' : '') + '</div>' +
-        '<button class="btn tog ' + (on ? 'isin' : 'isout') + '" data-toggle="' + esc(r.chest) + '">' + (on ? '✓ Checked in' : 'Mark present') + '</button>' +
+        ((on || gone) && r.checkinAt ? '<div class="small muted" style="margin-top:4px">Checked in ' + hhmm(r.checkinAt) + ' by ' + esc(r.checkinBy) +
+          (gone && r.checkoutAt ? ' · Checked out ' + hhmm(r.checkoutAt) + ' by ' + esc(r.checkoutBy) : '') + '</div>' : '') + '</div>' +
+        (gone ? '<div class="tog" style="text-align:center;font-weight:600;color:var(--muted);padding:11px 0">Checked out</div>'
+          : '<div style="display:flex;flex-direction:column;gap:8px"><button class="btn tog ' + (on ? 'isin' : 'isout') + '" data-toggle="' + esc(r.chest) + '">' + (on ? '✓ Checked in' : 'Mark present') + '</button>' +
+            (on ? '<button class="btn tog ghost" data-checkout="' + esc(r.chest) + '">Check out</button>' : '') + '</div>') +
         (r.notes ? '<div class="notes">' + esc(r.notes) + '</div>' : '') +
-        '<div class="addnote"><input class="in" data-notefor="' + esc(r.chest) + '" placeholder="Add note (team members, arrival info…)" maxlength="300"><button class="btn sm ghost" data-addnote="' + esc(r.chest) + '">Add note</button></div></div>';
+        '<div class="addnote"><input class="in" data-notefor="' + esc(r.chest) + '" placeholder="Note (optional) — saved with check-in / check-out, or press Add note" maxlength="300"><button class="btn sm ghost" data-addnote="' + esc(r.chest) + '">Add note</button></div></div>';
     }).join('') + (list.length > 150 ? '<div class="empty">Showing first 150 — search to narrow down.</div>' : '') : '<div class="empty">No student found. Check the chest number or try the name / phone.</div>';
+  }
+  function checkOut(btn, s) {
+    var chest = btn.dataset.checkout;
+    var r = D.registrations.filter(function (x) { return String(x.chest) === String(chest); })[0];
+    if (!confirm('Check out chest ' + chest + (r ? ' — ' + r.name : '') + '?\nThis is final for volunteers.')) return;
+    busy(btn, true, '');
+    var ni = $('[data-notefor="' + chest + '"]');
+    api('checkin', { token: s.token, chest: chest, status: AB.CHECKED_OUT, note: ni ? ni.value.trim() : '' }).then(function (res) {
+      if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } return; }
+      if (ni) ni.value = '';
+      toast('Chest ' + chest + ' · checked out');
+      loadData(s).then(function () { if (current() === 'admin') paintAdmin(); else paintVolunteer(); });
+    });
   }
   function toggleCheckin(btn, s) {
     var chest = btn.dataset.toggle;
     var r = D.registrations.filter(function (x) { return String(x.chest) === String(chest); })[0];
+    if (r.checkin === AB.CHECKED_OUT && current() !== 'admin') { toast('Chest ' + chest + ' is already checked out.', true); return; }
     var to = r.checkin === AB.PRESENT ? AB.ABSENT : AB.PRESENT;
+    var ni = $('[data-notefor="' + chest + '"]');
     busy(btn, true, '');
-    api('checkin', { token: s.token, chest: chest, status: to }).then(function (res) {
+    api('checkin', { token: s.token, chest: chest, status: to, note: ni ? ni.value.trim() : '' }).then(function (res) {
       if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } return; }
-      r.checkin = to; r.checkinBy = s.name; r.checkinAt = to === AB.PRESENT ? new Date().toISOString().replace('T', ' ') : '';
-      D.assignments.forEach(function (a) { if (String(a.chest) === String(chest)) a.checkin = to; });
+      if (ni) ni.value = '';
       toast('Chest ' + chest + ' · ' + (to === AB.PRESENT ? 'checked in' : 'marked not present'));
-      if (current() === 'admin') paintAdmin(); else paintVolunteer();
+      loadData(s).then(function () { if (current() === 'admin') paintAdmin(); else paintVolunteer(); });
     });
   }
   function addNote(chest, s) {

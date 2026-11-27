@@ -39,7 +39,7 @@ var AB = (function () {
   var ARTS_ALL = ARTS_BOYS.concat(ARTS_GIRLS.filter(function (x) { return ARTS_BOYS.indexOf(x) < 0; }));
   var MAX_PER_CATEGORY = 3;
   var SCREENING = ['Confirmed Reg', 'Screening Pending', 'Need Practice', 'Selected for Program'];
-  var PRESENT = 'Present', ABSENT = 'Not Present';
+  var PRESENT = 'Present', ABSENT = 'Not Present', CHECKED_OUT = 'Checked Out';
   var POINTS = { 1: 5, 2: 3, 3: 1 };
 
   function programCode(program) {
@@ -67,7 +67,8 @@ var AB = (function () {
     Registrations: [['ts', 'Timestamp'], ['chest', 'Chest No'], ['name', 'Name'], ['gender', 'Gender'],
       ['cls', 'Class'], ['group', 'Group'], ['phone', 'Parent Phone'], ['sports', 'Sports Items'],
       ['arts', 'Arts Items'], ['checkin', 'Check-In Status'], ['notes', 'Volunteer Notes'],
-      ['checkinBy', 'Checked In By'], ['checkinAt', 'Check-In Time']],
+      ['checkinBy', 'Checked In By'], ['checkinAt', 'Check-In Time'], ['checkoutBy', 'Checked Out By'],
+      ['checkoutAt', 'Check-Out Time']],
     Program_Assignments: [['entry', 'Entry ID'], ['chest', 'Chest No'], ['name', 'Student Name'],
       ['gender', 'Gender'], ['cls', 'Class'], ['group', 'Group'], ['program', 'Program Name'],
       ['category', 'Category'], ['screening', 'Screening Status'], ['checkin', 'Check-In Status'],
@@ -298,13 +299,27 @@ var AB = (function () {
     return { ok: true };
   }
 
+  /** Attendance: Not Present -> Present (check in) -> Checked Out (check out); check in again if they return. */
   function checkin(db, env, s, p) {
-    var status = p.status === PRESENT ? PRESENT : ABSENT;
+    var status = p.status === PRESENT ? PRESENT : p.status === CHECKED_OUT ? CHECKED_OUT : ABSENT;
     var regs = db.load('Registrations'), reg = null;
     regs.forEach(function (r) {
-      if (same(r.chest, p.chest)) { reg = r; r.checkin = status; r.checkinBy = s.name; r.checkinAt = status === PRESENT ? env.now() : ''; }
+      if (!same(r.chest, p.chest)) return;
+      reg = r;
+      // Check-out is final: only Admin can change it afterwards (to fix a mistake).
+      if (r.checkin === CHECKED_OUT && s.role !== 'admin') fail('Chest ' + r.chest + ' is already checked out.');
+      if (status === CHECKED_OUT && r.checkin !== PRESENT) fail('Chest ' + r.chest + ' is not checked in.');
+      r.checkin = status;
+      if (status === PRESENT) { r.checkinBy = s.name; r.checkinAt = env.now(); r.checkoutBy = ''; r.checkoutAt = ''; }
+      else if (status === CHECKED_OUT) { r.checkoutBy = s.name; r.checkoutAt = env.now(); }
+      else { r.checkinBy = s.name; r.checkinAt = ''; r.checkoutBy = ''; r.checkoutAt = ''; }
     });
     if (!reg) fail('Chest number not found.');
+    // Log the change with time and who did it in the notes, plus any note typed with it.
+    var what = status === PRESENT ? 'Checked in' : status === CHECKED_OUT ? 'Checked out' : 'Marked not present';
+    var extra = clean(p.note, 300);
+    var line = '[' + env.now().slice(5, 16) + ' ' + s.name + '] ' + what + (extra ? ' — ' + extra : '');
+    reg.notes = reg.notes ? reg.notes + '\n' + line : line;
     db.save('Registrations', regs);
     var rows = db.load('Program_Assignments');
     rows.forEach(function (r) { if (same(r.chest, p.chest)) r.checkin = status; });
@@ -494,7 +509,7 @@ var AB = (function () {
 
   return {
     CLASSES: CLASSES, GROUPS: GROUPS, GENDERS: GENDERS, SPORTS: SPORTS, ARTS_BOYS: ARTS_BOYS, ARTS_GIRLS: ARTS_GIRLS, ARTS_ALL: ARTS_ALL, gendersFor: gendersFor,
-    MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, POINTS: POINTS,
+    MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, CHECKED_OUT: CHECKED_OUT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
     isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
