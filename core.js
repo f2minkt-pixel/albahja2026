@@ -255,6 +255,7 @@ var AB = (function () {
     } else if (role === 'volunteer') {
       if (name.length < 2) fail('Please enter your name.');
       if (!validPhone(phone)) fail('Please enter a valid phone number.');
+      if (sec.volunteerCode && String(p.code || '').trim() !== sec.volunteerCode) bad('Incorrect check-in code.');
     } else if (role === 'judge') {
       if (name.length < 2) fail('Please enter your name.');
       if (allPrograms().indexOf(p.program) < 0) fail('Please choose the program you are judging.');
@@ -300,6 +301,20 @@ var AB = (function () {
   }
 
   /** Attendance: Not Present -> Present (check in) -> Checked Out (check out); check in again if they return. */
+  /** Bulk: set one screening status on many entries in a single save. */
+  function screenMany(db, env, s, p) {
+    if (SCREENING.indexOf(p.status) < 0) fail('Unknown screening status.');
+    var want = {}; (p.entries || []).forEach(function (e) { want[String(e)] = 1; });
+    var n = Object.keys(want).length;
+    if (!n) fail('Tick at least one entry.');
+    if (n > 500) fail('Please change at most 500 entries at a time.');
+    var rows = db.load('Program_Assignments'), hit = 0;
+    rows.forEach(function (r) { if (want[String(r.entry)]) { r.screening = p.status; r.screenedBy = s.name; hit++; } });
+    if (!hit) fail('Entries not found.');
+    db.save('Program_Assignments', rows);
+    return { ok: true, changed: hit };
+  }
+
   function checkin(db, env, s, p) {
     var status = p.status === PRESENT ? PRESENT : p.status === CHECKED_OUT ? CHECKED_OUT : ABSENT;
     var regs = db.load('Registrations'), reg = null;
@@ -493,17 +508,17 @@ var AB = (function () {
     return { ok: true, results: res, programs: programs };
   }
 
-  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1, setGuests: 1 };
+  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1, setGuests: 1, screenMany: 1 };
   var ROLES = {
     data: ['admin', 'teacher', 'volunteer', 'judge'],
-    screen: ['admin', 'teacher'],
+    screen: ['admin', 'teacher'], screenMany: ['admin', 'teacher'],
     checkin: ['admin', 'volunteer'],
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
     updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
     setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin'], setGuests: ['admin', 'volunteer']
   };
-  var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
+  var FNS = { data: data, screen: screen, screenMany: screenMany, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
 
   function handle(db, env, action, p) {
     p = p || {};

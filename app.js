@@ -422,25 +422,44 @@
   // 3. TEACHER SCREENING
   // =====================================================================
   var T = { q: '', group: '', cls: '', gender: '', program: '', status: '', view: 'entries' };
+  var TSel = {}; // ticked entry IDs for bulk change
   function viewTeacher() {
     var s = sessFor('teacher');
     if (!s) return loginCard('teacher', 'Teacher', 'Screen participants for each program. Your login is recorded.',
       fld('Teacher name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required') +
       fld('Special access code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Open screening portal');
     var tabs = '<div class="subtabs" id="tView"><button data-tview="entries" class="' + (T.view === 'entries' ? 'on' : '') + '">Screening</button>' +
-      '<button data-tview="programs" class="' + (T.view === 'programs' ? 'on' : '') + '">Program status</button></div>';
+      '<button data-tview="programs" class="' + (T.view === 'programs' ? 'on' : '') + '">Program status</button>' +
+      '<button data-tview="students" class="' + (T.view === 'students' ? 'on' : '') + '">Student status</button></div>';
     view.innerHTML = head('Screening stage', 'Teacher', 'Update each entry\'s status — changes save instantly to the sheet.', s) + tabs +
-      (T.view === 'programs'
+      (T.view === 'students'
+        ? secSeg(T.gender, 'eSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" data-f="q" type="search" placeholder="Search chest no., name or phone" value="' + esc(T.q) + '" autocomplete="off"></div>' +
+          '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>'
+        : T.view === 'programs'
         ? secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
-        : '<div id="tStats" class="stats"></div>' + entryToolbar(T) + '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>');
+        : '<div id="tStats" class="stats"></div>' + entryToolbar(T) +
+          '<div class="row" style="margin:0 0 10px;gap:12px"><label class="row small" style="gap:8px;font-weight:600;cursor:pointer"><input type="checkbox" id="tAll" style="width:20px;height:20px;accent-color:var(--green)">Select all shown</label>' +
+          '<span class="count grow" id="tCount" style="margin:0"></span></div>' +
+          '<div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>' +
+          '<div class="savebar" id="tBulk" hidden><span class="grow"><b id="tBulkN">0</b> selected</span>' +
+          '<select class="in" id="tBulkSt" style="width:auto;min-height:40px;color:var(--ink)">' + opts(AB.SCREENING, '', 'Set status…') + '</select>' +
+          '<button class="btn gold" id="tBulkGo">Apply</button><button class="btn ghost" id="tBulkClear" style="color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.4)">Clear</button></div>');
     view.onclick = function (e) {
       var tv = e.target.closest('[data-tview]'); if (tv) { T.view = tv.dataset.tview; viewTeacher(); return; }
+      var so = e.target.closest('[data-student]'); if (so) { openStudent(so.dataset.student, s); return; }
+      if (e.target.closest('#tBulkGo')) { bulkScreen(s); return; }
+      if (e.target.closest('#tBulkClear')) { TSel = {}; paintTeacher(); return; }
       var st = e.target.closest('[data-done]'); if (st) { setProgramStatus(st, s, st.dataset.prog, st.dataset.section, st.dataset.done, st.dataset.to); return; }
       var sc = pickSec(e, 'eSec'); if (sc != null) { T.gender = sc; paintTeacher(); }
     };
     view.oninput = view.onchange = function (e) {
       var t = e.target;
       if (t.dataset.f) { T[t.dataset.f] = t.value; paintTeacher(); return; }
+      if (e.type === 'change' && t.dataset.pick) { if (t.checked) TSel[t.dataset.pick] = 1; else delete TSel[t.dataset.pick]; paintBulk(filterEntries(T).slice(0, 400)); return; }
+      if (e.type === 'change' && t.id === 'tAll') {
+        filterEntries(T).slice(0, 400).forEach(function (a) { if (t.checked) TSel[a.entry] = 1; else delete TSel[a.entry]; });
+        paintTeacher(); return;
+      }
       if (e.type === 'change' && t.dataset.entry) setScreening(t, s);
     };
     loadData(s).then(paintTeacher);
@@ -463,6 +482,7 @@
   }
   function paintTeacher() {
     if (!D || !$('#tList')) return;
+    if (T.view === 'students') { paintStudents(); return; }
     if (T.view === 'programs') {
       $('#tList').innerHTML = programStatusHtml(AB.programList(D.assignments || [], D.scores || null, D.programStatus || []), { gender: T.gender, program: T.program }, true);
       return;
@@ -476,10 +496,97 @@
     var list = filterEntries(T);
     $('#tCount').textContent = list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + (T.status ? ' · ' + T.status : '');
     $('#tList').innerHTML = list.length ? list.slice(0, 400).map(function (a) {
-      return '<div class="item"><span class="chest">' + esc(a.chest) + '</span><div class="who"><b>' + esc(a.name) + '</b><div class="meta"><span>' + esc(a.cls) + '</span><span>' + esc(shortGroup(a.group)) + '</span><span>' + esc(a.gender) + '</span><span>Entry ' + esc(a.entry) + '</span></div></div>' +
+      return '<div class="item' + (TSel[a.entry] ? ' picked' : '') + '"><input type="checkbox" data-pick="' + esc(a.entry) + '"' + (TSel[a.entry] ? ' checked' : '') +
+        ' aria-label="Select entry ' + esc(a.entry) + '" style="width:22px;height:22px;accent-color:var(--green);flex:none;margin:0">' +
+        '<span class="chest">' + esc(a.chest) + '</span><div class="who"><b>' + esc(a.name) + '</b><div class="meta"><span>' + esc(a.cls) + '</span><span>' + esc(shortGroup(a.group)) + '</span><span>' + esc(a.gender) + '</span><span>Entry ' + esc(a.entry) + '</span></div></div>' +
         '<div class="acts">' + ci(a.chest, a.checkin) + '<span class="pill cat-' + esc(a.category) + '">' + esc(a.program) + '</span>' +
         '<select class="pill-sel st-' + stIdx(a.screening) + '" data-entry="' + esc(a.entry) + '" aria-label="Screening status for chest ' + esc(a.chest) + '">' + opts(AB.SCREENING, a.screening) + '</select></div></div>';
     }).join('') + (list.length > 400 ? '<div class="empty">Showing first 400 — use the filters to narrow down.</div>' : '') : '<div class="empty">No entries match these filters.</div>';
+    paintBulk(list.slice(0, 400));
+  }
+  /** Bulk bar: shows how many are ticked; "Select all shown" reflects the visible list. */
+  function paintBulk(shown) {
+    var n = Object.keys(TSel).length, bar = $('#tBulk');
+    if (!bar) return;
+    bar.hidden = !n; $('#tBulkN').textContent = n;
+    var all = $('#tAll');
+    if (all && shown) { var k = shown.filter(function (a) { return TSel[a.entry]; }).length; all.checked = !!shown.length && k === shown.length; all.indeterminate = k > 0 && k < shown.length; }
+    $$('#tList [data-pick]').forEach(function (c) { c.closest('.item').classList.toggle('picked', c.checked); });
+  }
+  function bulkScreen(s) {
+    var ids = Object.keys(TSel), status = $('#tBulkSt').value, btn = $('#tBulkGo');
+    if (!ids.length) return;
+    if (!status) { toast('Choose a status to apply first.', true); $('#tBulkSt').focus(); return; }
+    if (!confirm('Set ' + ids.length + ' entr' + (ids.length === 1 ? 'y' : 'ies') + ' to "' + status + '"?')) return;
+    busy(btn, true, 'Saving…');
+    api('screenMany', { token: s.token, entries: ids, status: status }).then(function (r) {
+      busy(btn, false);
+      if (!r.ok) { toast(r.error, true); if (r.auth) { setSession(s.role, null); route(); } return; }
+      D.assignments.forEach(function (a) { if (TSel[a.entry]) { a.screening = status; a.screenedBy = s.name; } });
+      TSel = {};
+      toast(r.changed + ' entr' + (r.changed === 1 ? 'y' : 'ies') + ' set to ' + status);
+      paintTeacher();
+    });
+  }
+  /** Student status: one card per student; tap to open everything about them. */
+  function paintStudents() {
+    var q = T.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+    var list = (D.registrations || []).filter(function (r) {
+      if (T.gender && AB.sectionOf(r) !== T.gender) return false;
+      if (!q) return true;
+      return String(r.chest).indexOf(q) === 0 || String(r.name).toLowerCase().indexOf(q) >= 0 || (qd.length >= 3 && String(r.phone).indexOf(qd) >= 0);
+    }).sort(function (a, b) { return Number(a.chest) - Number(b.chest); });
+    $('#tCount').textContent = list.length + ' student' + (list.length === 1 ? '' : 's') + ' — tap a student to see everything';
+    $('#tList').innerHTML = list.length ? list.slice(0, 200).map(function (r) {
+      var en = (D.assignments || []).filter(function (a) { return String(a.chest) === String(r.chest); });
+      var sel = en.filter(function (a) { return a.screening === 'Selected for Program'; }).length;
+      return '<button class="item" data-student="' + esc(r.chest) + '" style="border:0;width:100%;text-align:left;cursor:pointer">' +
+        '<span class="chest">' + esc(r.chest) + '</span><div class="who"><b>' + esc(r.name) + '</b><div class="meta"><span>' + esc(r.gender) + '</span><span>' + esc(r.cls) +
+        '</span><span>' + esc(shortGroup(r.group)) + '</span><span>' + en.length + ' item' + (en.length === 1 ? '' : 's') + ' · ' + sel + ' selected</span></div></div>' +
+        '<div class="acts">' + ci(r.chest, r.checkin) + '<span class="pill">View ›</span></div></button>';
+    }).join('') : '<div class="empty">No student found.</div>';
+  }
+  function openStudent(chest, s) {
+    var r = (D.registrations || []).filter(function (x) { return String(x.chest) === String(chest); })[0];
+    if (!r) return;
+    var en = (D.assignments || []).filter(function (a) { return String(a.chest) === String(chest); });
+    var results = D.scores ? AB.computeResults(D.assignments, D.scores) : [];
+    var hhmm = function (t) { return t ? esc(String(t).slice(5, 16)) : '—'; };
+    var row = function (k, v) { return '<dt>' + k + '</dt><dd>' + v + '</dd>'; };
+    var items = en.map(function (a) {
+      var st = statusOf(a.program, AB.sectionOf(a), AB.compGroup(a)), done = st && st.status === 'Completed';
+      var res = '';
+      if (D.scores) {
+        var b = results.filter(function (x) { return x.program === a.program && x.gender === AB.sectionOf(a) && x.group === AB.compGroup(a); })[0];
+        var e = b && b.entries.filter(function (x) { return String(x.chest) === String(chest); })[0];
+        res = e ? '<span class="pill st-0">Score ' + e.avg + ' · Rank ' + e.rank + '</span>' : '<span class="pill">Not scored</span>';
+      }
+      return '<div class="place" style="border-top:1px solid var(--line);border-radius:0;padding:10px 2px;flex-wrap:wrap;gap:8px">' +
+        '<div class="nm" style="min-width:160px"><b>' + esc(a.program) + '</b><span>Entry ' + esc(a.entry) + ' · ' + esc(a.category) + '</span></div>' +
+        '<span class="pill ' + (done ? 'st-3' : 'st-1') + '">' + (done ? '✓ Completed' : 'Pending') + '</span>' + res +
+        '<select class="pill-sel st-' + stIdx(a.screening) + '" data-entry="' + esc(a.entry) + '" aria-label="Screening status for ' + esc(a.program) + '">' + opts(AB.SCREENING, a.screening) + '</select></div>';
+    }).join('');
+    var m = document.createElement('div'); m.className = 'modal';
+    m.innerHTML = '<div class="card" style="max-width:620px">' +
+      '<div class="row" style="margin-bottom:12px"><span class="chest lg">' + esc(r.chest) + '</span><div class="grow"><h3>' + esc(r.name) + '</h3>' +
+      '<div class="small muted">' + esc(r.gender) + ' · ' + esc(r.cls) + ' · ' + esc(r.group) + '</div></div>' + ci(r.chest, r.checkin) +
+      '<button type="button" class="btn sm ghost" data-close>Close</button></div>' +
+      '<div class="review"><dl>' +
+      row('Parent phone', esc(r.phone)) + row('Registered', hhmm(r.ts)) +
+      row('Check-in', r.checkinAt ? hhmm(r.checkinAt) + ' by ' + esc(r.checkinBy) : '—') +
+      row('Check-out', r.checkoutAt ? hhmm(r.checkoutAt) + ' by ' + esc(r.checkoutBy) : '—') +
+      row('People with them', esc(Number(r.guests) || 0)) +
+      '</dl></div>' +
+      '<h3 style="margin:16px 0 4px">Items (' + en.length + ')</h3><div>' + (items || '<p class="muted small">No items.</p>') + '</div>' +
+      '<h3 style="margin:16px 0 6px">Notes</h3>' + (r.notes ? '<div class="notes" style="background:var(--gold-l);border-radius:10px;padding:10px 12px;white-space:pre-line;font-size:13px">' + esc(r.notes) + '</div>' : '<p class="muted small" style="margin:0">No notes.</p>') +
+      (s.role === 'admin' ? '<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn ghost" data-editstudent="' + esc(r.chest) + '">Edit details</button></div>' : '') +
+      '</div>';
+    document.body.appendChild(m);
+    m.onclick = function (e) {
+      if (e.target === m || e.target.closest('[data-close]')) { m.remove(); return; }
+      var ed = e.target.closest('[data-editstudent]'); if (ed) { m.remove(); editReg(ed.dataset.editstudent, s); }
+    };
+    m.onchange = function (e) { if (e.target.dataset.entry) setScreening(e.target, s); };
   }
   function setScreening(sel, s) {
     var entry = sel.dataset.entry, status = sel.value;
@@ -505,7 +612,8 @@
   function viewVolunteer() {
     var s = sessFor('volunteer');
     if (!s) return loginCard('volunteer', 'Check In', 'Mark arrivals at the desk. Your name and phone are logged.',
-      fld('Volunteer name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required'), 'Open check-in desk');
+      fld('Volunteer name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required') +
+      fld('Check-in code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Open check-in desk');
     view.innerHTML = head('Check-in desk', 'Check In', 'Search by chest number, name or phone. You can mark attendance and add notes — registration details stay locked.', s) +
       '<div class="stats" id="vStats"></div>' + secSeg(V.sec, 'vSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" id="vq" type="search" inputmode="search" placeholder="Chest no., name or phone" value="' + esc(V.q) + '" autocomplete="off"></div>' +
       '<div class="row" style="margin-bottom:14px"><div class="seg" id="vShow">' + [['', 'All'], [AB.PRESENT, 'Present'], [AB.ABSENT, 'Not Present'], [AB.CHECKED_OUT, 'Checked out']].map(function (x) {
@@ -661,7 +769,7 @@
     if (!s) return loginCard('judge', 'Judge Panel', 'Choose the program you are judging. Participants are shown by chest number only.',
       fld('Judge name', 'name', 'autocomplete="name" required') +
       '<div class="field"><label class="f" for="f_program">Program / event</label><select class="in" id="f_program" name="program">' + progOpts('', 'Select program') + '</select></div>' +
-      fld('Judge code <span class="muted" style="font-weight:400">(only if you were given one)</span>', 'code', 'type="password" autocomplete="off"'), 'Start judging');
+      fld('Judge code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Start judging');
     var isAdmin = s.role === 'admin';
     var program = isAdmin ? (J.program || AB.ARTS_BOYS[0]) : s.program;
     J.program = program;
