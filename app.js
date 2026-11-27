@@ -461,13 +461,14 @@
     view.innerHTML = head('Screening stage', 'Teacher', 'Update each entry\'s status — changes save instantly to the sheet.', s) + tabs +
       (T.view === 'students'
         ? secSeg(T.gender, 'eSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" data-f="q" type="search" placeholder="Search chest no., name or phone" value="' + esc(T.q) + '" autocomplete="off"></div>' +
-          '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>'
+          '<div class="row" style="margin:0 0 10px;gap:12px"><p class="count grow" id="tCount" style="margin:0"></p><button class="btn sm gold" data-downloads="1">⬇ Downloads</button></div>' +
+          '<div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>'
         : T.view === 'programs'
-        ? catSeg(T.pcat, 'tCat') + secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
+        ? catSeg(T.pcat, 'tCat') + secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select><button class="btn gold" data-downloads="1">⬇ Downloads</button></div><div id="tList"></div>'
         : '<div class="notice info" style="margin:0 0 12px">Screening is for Arts items only — sports need no screening.</div>' +
           '<div id="tStats" class="stats"></div>' + entryToolbar(T) +
           '<div class="row" style="margin:0 0 10px;gap:12px"><label class="row small" style="gap:8px;font-weight:600;cursor:pointer"><input type="checkbox" id="tAll" style="width:20px;height:20px;accent-color:var(--green)">Select all shown</label>' +
-          '<span class="count grow" id="tCount" style="margin:0"></span></div>' +
+          '<span class="count grow" id="tCount" style="margin:0"></span><button class="btn sm gold" data-downloads="1">⬇ Downloads</button></div>' +
           '<div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>' +
           '<div class="savebar" id="tBulk" hidden><span class="grow"><b id="tBulkN">0</b> selected</span>' +
           '<select class="in" id="tBulkSt" style="width:auto;min-height:40px;color:var(--ink)">' + opts(AB.SCREENING, '', 'Set status…') + '</select>' +
@@ -476,6 +477,7 @@
       var tv = e.target.closest('[data-tview]'); if (tv) { T.view = tv.dataset.tview; viewTeacher(); return; }
       var so = e.target.closest('[data-student]'); if (so) { openStudent(so.dataset.student, s); return; }
       var tc = pickCat(e, 'tCat'); if (tc) { T.pcat = tc; T.program = ''; viewTeacher(); return; }
+      if (e.target.closest('[data-downloads]')) { openDownloads(s.role === 'admin'); return; }
       if (e.target.closest('#tBulkGo')) { bulkScreen(s); return; }
       if (e.target.closest('#tBulkClear')) { TSel = {}; paintTeacher(); return; }
       var st = e.target.closest('[data-done]'); if (st) { setProgramStatus(st, s, st.dataset.prog, st.dataset.section, st.dataset.done, st.dataset.to); return; }
@@ -617,6 +619,130 @@
     };
     m.onchange = function (e) { if (e.target.dataset.entry) setScreening(e.target, s); };
   }
+  // ===================== DOWNLOADS (PDF with logos + Excel/CSV) =====================
+  var REPORTS = [
+    ['students', 'Student list', 'Every student with class, group, phone, items and check-in'],
+    ['screening', 'Screening list (Arts)', 'Arts entries by program with screening status'],
+    ['programs', 'Program sheets', 'Every Arts & Sports program, participants by section and age group'],
+    ['attendance', 'Attendance', 'Present / not present / checked out, times, people with them, notes'],
+    ['classwise', 'Class-wise list', 'Students grouped by Madrasa class'],
+    ['status', 'Program status', 'Pending and completed programs'],
+    ['results', 'Results', 'Scores, averages and ranks (Admin only)']
+  ];
+  function ciTxt(st) { return st === AB.PRESENT ? 'Present' : st === AB.CHECKED_OUT ? 'Checked out' : 'Not present'; }
+  function hm(t) { return t ? String(t).slice(5, 16) : ''; }
+  /** Builds a report as { title, sections:[{ h, cols, rows, remarks }] }. sec = Boys/Girls/Rawdha filter. */
+  function buildReport(kind, sec) {
+    var regs = (D.registrations || []).filter(function (r) { return !sec || AB.sectionOf(r) === sec; })
+      .sort(function (a, b) { return Number(a.chest) - Number(b.chest); });
+    var ens = (D.assignments || []).filter(function (a) { return !sec || AB.sectionOf(a) === sec; });
+    var items = function (r) { return AB.splitItems(r.sports).concat(AB.splitItems(r.arts)).join(', '); };
+    var out = { title: '', sections: [] };
+    if (kind === 'students') {
+      out.title = 'Student list';
+      out.sections.push({ h: regs.length + ' students', remarks: true, cols: ['#', 'Chest', 'Name', 'Gender', 'Class', 'Group', 'Parent phone', 'Items', 'Check-in'],
+        rows: regs.map(function (r, i) { return [i + 1, r.chest, r.name, r.gender, r.cls, shortGroup(r.group), r.phone, items(r), ciTxt(r.checkin)]; }) });
+    } else if (kind === 'screening' || kind === 'programs') {
+      out.title = kind === 'screening' ? 'Screening list (Arts)' : 'Program sheets';
+      var list = kind === 'screening' ? ens.filter(function (a) { return a.category === 'Arts'; }) : ens;
+      var buckets = {};
+      list.forEach(function (a) { var k = a.program + '|' + AB.sectionOf(a) + '|' + AB.compGroup(a); (buckets[k] = buckets[k] || []).push(a); });
+      Object.keys(buckets).sort(function (x, y) {
+        var X = x.split('|'), Y = y.split('|');
+        return AB.allPrograms().indexOf(X[0]) - AB.allPrograms().indexOf(Y[0]) || AB.SECTIONS.indexOf(X[1]) - AB.SECTIONS.indexOf(Y[1]) || AB.ALL_GROUPS.indexOf(X[2]) - AB.ALL_GROUPS.indexOf(Y[2]);
+      }).forEach(function (k) {
+        var p = k.split('|'), en = buckets[k].sort(function (a, b) { return Number(a.chest) - Number(b.chest); });
+        out.sections.push({ h: p[0] + ' · ' + p[1] + (p[1] === 'Rawdha' ? '' : ' · ' + shortGroup(p[2])) + ' (' + en.length + ')', remarks: true,
+          cols: kind === 'screening' ? ['#', 'Chest', 'Name', 'Class', 'Check-in', 'Screening'] : ['#', 'Chest', 'Name', 'Class', 'Check-in', 'Score'],
+          rows: en.map(function (a, i) { return kind === 'screening' ? [i + 1, a.chest, a.name, a.cls, ciTxt(a.checkin), a.screening] : [i + 1, a.chest, a.name, a.cls, ciTxt(a.checkin), '']; }) });
+      });
+    } else if (kind === 'attendance') {
+      out.title = 'Attendance';
+      var pres = regs.filter(function (r) { return r.checkin === AB.PRESENT; }), gone = regs.filter(function (r) { return r.checkin === AB.CHECKED_OUT; });
+      var notIn = regs.filter(function (r) { return r.checkin !== AB.PRESENT && r.checkin !== AB.CHECKED_OUT; });
+      var guests = pres.reduce(function (n, r) { return n + (Number(r.guests) || 0); }, 0);
+      out.sections.push({ h: 'Summary', cols: ['Registered', 'Checked in now', 'People with them', 'Headcount now', 'Not present', 'Checked out'],
+        rows: [[regs.length, pres.length, guests, pres.length + guests, notIn.length, gone.length]] });
+      var att = function (r, i) { return [i + 1, r.chest, r.name, r.gender, r.cls, r.phone, Number(r.guests) || 0, hm(r.checkinAt), r.checkinBy || '', hm(r.checkoutAt), r.checkoutBy || '', String(r.notes || '').replace(/\n/g, ' | ')]; };
+      var ac = ['#', 'Chest', 'Name', 'Gender', 'Class', 'Phone', 'With them', 'In', 'By', 'Out', 'By', 'Notes'];
+      out.sections.push({ h: 'Checked in now (' + pres.length + ')', cols: ac, rows: pres.map(att) });
+      out.sections.push({ h: 'Not present (' + notIn.length + ')', cols: ac, rows: notIn.map(att), remarks: true });
+      out.sections.push({ h: 'Checked out (' + gone.length + ')', cols: ac, rows: gone.map(att) });
+    } else if (kind === 'classwise') {
+      out.title = 'Class-wise list';
+      AB.CLASSES.forEach(function (c) {
+        var rs = regs.filter(function (r) { return r.cls === c; }); if (!rs.length) return;
+        out.sections.push({ h: c + ' (' + rs.length + ')', remarks: true, cols: ['#', 'Chest', 'Name', 'Gender', 'Group', 'Parent phone', 'Items', 'Check-in'],
+          rows: rs.map(function (r, i) { return [i + 1, r.chest, r.name, r.gender, shortGroup(r.group), r.phone, items(r), ciTxt(r.checkin)]; }) });
+      });
+    } else if (kind === 'status') {
+      out.title = 'Program status';
+      var pl = AB.programList(D.assignments || [], D.scores || null, D.programStatus || []).filter(function (p) { return !sec || p.section === sec; });
+      ['Pending', 'Completed'].forEach(function (st) {
+        var rs = pl.filter(function (p) { return p.status === st; });
+        out.sections.push({ h: st + ' (' + rs.length + ')', cols: ['#', 'Program', 'Category', 'Section', 'Group', 'Entries'].concat(D.scores ? ['Scored'] : []).concat(st === 'Completed' ? ['Marked by', 'Time'] : []),
+          rows: rs.map(function (p, i) { return [i + 1, p.program, p.category, p.section, p.section === 'Rawdha' ? '' : shortGroup(p.group), p.entries].concat(D.scores ? [p.scored] : []).concat(st === 'Completed' ? [p.by || '', hm(p.ts)] : []); }) });
+      });
+    } else if (kind === 'results') {
+      out.title = 'Results';
+      AB.computeResults(D.assignments || [], D.scores || []).filter(function (b) { return !sec || b.gender === sec; }).forEach(function (b) {
+        out.sections.push({ h: b.program + ' · ' + b.gender + (b.gender === 'Rawdha' ? '' : ' · ' + shortGroup(b.group)), cols: ['Rank', 'Chest', 'Name', 'Class', 'Average', 'Total', 'Judges'],
+          rows: b.entries.map(function (e) { return [e.rank, e.chest, e.name, e.cls, e.avg, e.total, e.judges]; }) });
+      });
+    }
+    return out;
+  }
+  function openDownloads(isAdmin) {
+    if (!D) return;
+    var sec = (current() === 'admin' ? A.F.gender : T.gender) || '';
+    var m = document.createElement('div'); m.className = 'modal';
+    m.innerHTML = '<div class="card" style="max-width:560px"><div class="row" style="margin-bottom:6px"><h3 class="grow">⬇ Downloads</h3><button type="button" class="btn sm ghost" data-close>Close</button></div>' +
+      '<p class="small muted" style="margin:0 0 10px">PDF has the logos and a Remarks column to write in. Excel opens in Excel / Google Sheets.' + (sec ? ' Showing <b>' + esc(sec) + '</b> only (from the Show buttons).' : '') + '</p>' +
+      REPORTS.filter(function (r) { return r[0] !== 'results' || (isAdmin && D.scores); }).map(function (r) {
+        return '<div class="place" style="border-top:1px solid var(--line);border-radius:0;padding:10px 2px;gap:8px;flex-wrap:wrap"><div class="nm" style="min-width:180px"><b>' + r[1] + '</b><span>' + r[2] + '</span></div>' +
+          '<button class="btn sm" data-rep="' + r[0] + '" data-fmt="pdf">PDF</button><button class="btn sm ghost" data-rep="' + r[0] + '" data-fmt="csv">Excel</button></div>';
+      }).join('') + '</div>';
+    document.body.appendChild(m);
+    m.onclick = function (e) {
+      if (e.target === m || e.target.closest('[data-close]')) { m.remove(); return; }
+      var b = e.target.closest('[data-rep]'); if (!b) return;
+      var rep = buildReport(b.dataset.rep, sec);
+      if (!rep.sections.some(function (x) { return x.rows.length; })) { toast('Nothing to download yet.', true); return; }
+      if (b.dataset.fmt === 'csv') downloadCSV(rep, sec); else { m.remove(); printReport(rep, sec); }
+    };
+  }
+  function fileName(rep, sec, ext) { return 'AlBahja-' + rep.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/-$/, '') + (sec ? '-' + sec : '') + '-' + new Date().toISOString().slice(0, 10) + '.' + ext; }
+  function downloadCSV(rep, sec) {
+    var q = function (v) { v = String(v == null ? '' : v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var lines = ['Al Bahja Madrasa Meet 26 - ' + rep.title + (sec ? ' - ' + sec : ''), ''];
+    rep.sections.forEach(function (x) {
+      lines.push(q(x.h)); lines.push(x.cols.concat(x.remarks ? ['Remarks'] : []).map(q).join(','));
+      x.rows.forEach(function (r) { lines.push(r.concat(x.remarks ? [''] : []).map(q).join(',')); });
+      lines.push('');
+    });
+    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fileName(rep, sec, 'csv');
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 1500);
+    toast('Downloaded ' + rep.title + ' (Excel)');
+  }
+  function printReport(rep, sec) {
+    var who = (sessFor(current() === 'admin' ? 'admin' : 'teacher') || {}).name || '', now = new Date();
+    var body = rep.sections.map(function (x) {
+      return '<h2>' + esc(x.h) + '</h2>' + (x.rows.length ? '<table><tr>' + x.cols.concat(x.remarks ? ['Remarks'] : []).map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') + '</tr>' +
+        x.rows.map(function (r) { return '<tr>' + r.map(function (v, i) { return '<td>' + (x.cols[i] === 'Chest' ? '<span class="pchest">' + esc(v) + '</span>' : x.cols[i] === 'Name' ? '<b>' + esc(v) + '</b>' : esc(v)) + '</td>'; }).join('') + (x.remarks ? '<td class="rm"></td>' : '') + '</tr>'; }).join('') + '</table>'
+        : '<p style="color:#5E6B62;margin:0">None.</p>');
+    }).join('');
+    var sheet = $('#printSheet') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'printSheet' }));
+    sheet.innerHTML = '<div class="ps"><div class="ps-head"><img class="lg" src="assets/logo.png" alt="Al Bahja"><div><h1>Al Bahja Madrasa Meet \'26 — ' + esc(rep.title) + '</h1>' +
+      '<p>' + (sec ? esc(sec) + ' · ' : '') + 'Printed ' + now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (who ? ' by ' + esc(who) : '') + '</p></div>' +
+      '<img class="sv" src="assets/sarga.png" alt="Sarga Vasantham"></div>' + body + '<p class="foot">Fri, 4 Dec 2026 · Saihat Istiraha, Dhahran–Jubail Highway</p></div>';
+    var imgs = $$('img', sheet), left = imgs.length;
+    var go = function () { document.title = fileName(rep, sec, 'pdf').replace(/\.pdf$/, ''); document.body.classList.add('printing'); setTimeout(function () { window.print(); }, 60); };
+    var done = function () { if (--left <= 0) go(); };
+    imgs.forEach(function (im) { if (im.complete) done(); else { im.onload = done; im.onerror = done; } });
+  }
+  window.addEventListener('afterprint', function () { document.body.classList.remove('printing'); document.title = 'Al Bahja Madrasa Meet'; });
+
   function setScreening(sel, s) {
     var entry = sel.dataset.entry, status = sel.value;
     var a = D.assignments.filter(function (x) { return x.entry === entry; })[0], prev = a && a.screening;
@@ -967,7 +1093,7 @@
   function paintAdmin() {
     if (!D || !$('#aBody')) return;
     $('#aActions').innerHTML = (D.sheetUrl ? '<a class="btn ghost sm" href="' + esc(D.sheetUrl) + '" target="_blank" rel="noopener">Open Google Sheet ↗</a>' : '') +
-      '<button class="btn ghost sm" data-export="1">Export this tab (CSV)</button><button class="btn ghost sm" data-refresh="1">Refresh</button>' +
+      '<button class="btn gold sm" data-downloads="1">⬇ Downloads</button><button class="btn ghost sm" data-export="1">Export this tab (CSV)</button><button class="btn ghost sm" data-refresh="1">Refresh</button>' +
       (DEMO ? '<span class="grow"></span><button class="btn sm gold" data-seed="1">Load sample data</button><button class="btn sm danger" data-reset="1">Reset demo</button>' : '');
     $$('#aTabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === A.tab); });
     var b = $('#aBody');
@@ -1071,6 +1197,7 @@
     if (sc != null) { A.F.gender = sc; paintAdminList(); return; }
     if ((t = e.target.closest('[data-tab]'))) { A.tab = t.dataset.tab; A.q = ''; paintAdmin(); return; }
     if (e.target.closest('[data-refresh]')) { loadData(s).then(paintAdmin); return; }
+    if (e.target.closest('[data-downloads]')) { openDownloads(true); return; }
     if (e.target.closest('[data-export]')) { exportTab(); return; }
     if (e.target.closest('[data-seed]')) { window.ABDemo.seed(); toast('Sample data loaded'); loadData(s).then(paintAdmin); return; }
     if (e.target.closest('[data-reset]')) {
