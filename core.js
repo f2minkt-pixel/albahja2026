@@ -89,16 +89,25 @@ var AB = (function () {
     for (var i = 0; i < 1000; i++) { var c = String(100000 + Math.floor(rnd() * 900000)); if (!used[c]) return c; }
     fail('Could not create a judge code.');
   }
+  // All sports events share one judge code; each Arts item has its own.
+  var ALL_SPORTS = 'All Sports';
+  function codeKey(program) { return SPORTS.indexOf(program) >= 0 || program === ALL_SPORTS ? ALL_SPORTS : program; }
+  function codeKeys() { return [ALL_SPORTS].concat(ARTS_ALL); }
+  /** Programs a judge session may score: all sports events for the sports code, else just its program. */
+  function judgePrograms(s) { return codeKey(s.program) === ALL_SPORTS ? SPORTS.slice() : [s.program]; }
   function judgeCodes(db, env) {
-    var rows = db.load('Judge_Codes'), have = {}, used = {}, changed = false;
-    rows.forEach(function (r) { have[r.program] = 1; used[String(r.code)] = 1; });
-    allPrograms().forEach(function (p) {
-      if (have[p]) return;
-      var c = newCode(used, env.random); used[c] = 1;
-      rows.push({ program: p, code: c, updated: env.now() }); changed = true;
+    var rows = db.load('Judge_Codes'), keep = [], have = {}, used = {}, changed = false, sportsCode = '';
+    rows.forEach(function (r) {
+      if (SPORTS.indexOf(r.program) >= 0) { if (!sportsCode) sportsCode = String(r.code); changed = true; return; } // old per-sport codes
+      keep.push(r); have[r.program] = 1; used[String(r.code)] = 1;
     });
-    if (changed) db.save('Judge_Codes', rows);
-    return rows;
+    codeKeys().forEach(function (k) {
+      if (have[k]) return;
+      var c = (k === ALL_SPORTS && sportsCode && !used[sportsCode]) ? sportsCode : newCode(used, env.random); used[c] = 1;
+      keep.push({ program: k, code: c, updated: env.now() }); changed = true;
+    });
+    if (changed) db.save('Judge_Codes', keep);
+    return keep;
   }
   function statusKey(program, section, group) { return program + '|' + section + '|' + group; }
   function statusMap(rows) { var m = {}; rows.forEach(function (r) { m[statusKey(r.program, r.section, r.group)] = r; }); return m; }
@@ -277,7 +286,7 @@ var AB = (function () {
     } else if (role === 'judge') {
       if (name.length < 2) fail('Please enter your name.');
       if (allPrograms().indexOf(p.program) < 0) fail('Please choose the program you are judging.');
-      var jc = judgeCodes(db, env).filter(function (r) { return r.program === p.program; })[0];
+      var jc = judgeCodes(db, env).filter(function (r) { return r.program === codeKey(p.program); })[0];
       if (!jc || String(p.code || '').trim() !== String(jc.code)) bad('Incorrect code for ' + p.program + '. Ask the organisers for this program\'s code.');
       sess.program = p.program;
       detail = 'Program: ' + p.program;
@@ -293,10 +302,12 @@ var AB = (function () {
     var out = { ok: true, role: s.role, name: s.name, program: s.program || '' };
     if (s.role === 'judge') {
       // Judges see chest numbers only (blind judging), and only their own marks.
-      out.assignments = assigns.filter(function (a) { return a.program === s.program; })
+      var mine = judgePrograms(s);
+      out.programs = mine;
+      out.assignments = assigns.filter(function (a) { return mine.indexOf(a.program) >= 0; })
         .map(function (a) { return { entry: a.entry, chest: a.chest, gender: a.gender, cls: a.cls, group: a.group, program: a.program, category: a.category, screening: a.screening, checkin: a.checkin }; });
-      out.scores = db.load('Scores').filter(function (x) { return x.judge === s.name && x.program === s.program; });
-      out.programStatus = db.load('Program_Status').filter(function (x) { return x.program === s.program; });
+      out.scores = db.load('Scores').filter(function (x) { return x.judge === s.name && mine.indexOf(x.program) >= 0; });
+      out.programStatus = db.load('Program_Status').filter(function (x) { return mine.indexOf(x.program) >= 0; });
       return out;
     }
     out.assignments = assigns;
@@ -337,13 +348,14 @@ var AB = (function () {
 
   /** Admin: give a program a new judge code (random, or a chosen 4–8 digit code). */
   function setJudgeCode(db, env, s, p) {
-    if (allPrograms().indexOf(p.program) < 0) fail('Unknown program.');
+    var key = codeKey(p.program);
+    if (codeKeys().indexOf(key) < 0) fail('Unknown program.');
     var rows = judgeCodes(db, env), used = {};
-    rows.forEach(function (r) { if (r.program !== p.program) used[String(r.code)] = 1; });
+    rows.forEach(function (r) { if (r.program !== key) used[String(r.code)] = 1; });
     var code = p.code ? String(p.code).trim() : newCode(used, env.random);
     if (!/^\d{4,8}$/.test(code)) fail('Code must be 4 to 8 digits.');
     if (used[code]) fail('That code is already used by another program.');
-    rows.forEach(function (r) { if (r.program === p.program) { r.code = code; r.updated = env.now(); } });
+    rows.forEach(function (r) { if (r.program === key) { r.code = code; r.updated = env.now(); } });
     db.save('Judge_Codes', rows);
     return { ok: true, code: code };
   }
@@ -409,7 +421,8 @@ var AB = (function () {
   }
 
   function score(db, env, s, p) {
-    var program = s.role === 'judge' ? s.program : p.program;
+    var program = s.role === 'judge' ? (p.program || s.program) : p.program;
+    if (s.role === 'judge' && judgePrograms(s).indexOf(program) < 0) fail('Your judge code is not for ' + program + '.');
     var judge = s.role === 'judge' ? s.name : clean(p.judgeName || 'Admin', 60);
     if (allPrograms().indexOf(program) < 0) fail('Unknown program.');
     var assigns = db.load('Program_Assignments').filter(function (a) { return a.program === program; });
@@ -492,7 +505,8 @@ var AB = (function () {
 
   /** Tag a program (per section + age group) as Completed or Open again. Label only — marks stay editable. */
   function setStatus(db, env, s, p) {
-    var program = s.role === 'judge' ? s.program : p.program;
+    var program = s.role === 'judge' ? (p.program || s.program) : p.program;
+    if (s.role === 'judge' && judgePrograms(s).indexOf(program) < 0) fail('Your judge code is not for ' + program + '.');
     if (allPrograms().indexOf(program) < 0) fail('Unknown program.');
     if (SECTIONS.indexOf(p.section) < 0) fail('Choose Boys, Girls or Rawdha first.');
     if (ALL_GROUPS.indexOf(p.group) < 0) fail('Choose one age group first.');
@@ -579,6 +593,6 @@ var AB = (function () {
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
     isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
     SECTIONS: SECTIONS, ARTS_RAWDHA: ARTS_RAWDHA, isRawdha: isRawdha, sectionOf: sectionOf, artsFor: artsFor,
-    statusKey: statusKey, statusMap: statusMap, compGroup: compGroup, programList: programList
+    ALL_SPORTS: ALL_SPORTS, codeKey: codeKey, codeKeys: codeKeys, statusKey: statusKey, statusMap: statusMap, compGroup: compGroup, programList: programList
   };
 })();

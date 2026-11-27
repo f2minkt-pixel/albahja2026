@@ -787,13 +787,15 @@
       '<div class="field"><label class="f" for="f_program">Program / event</label><select class="in" id="f_program" name="program">' + progOpts('', 'Select program') + '</select></div>' +
       fld('Program code <span class="muted" style="font-weight:400">(each program has its own code)</span>', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Start judging');
     var isAdmin = s.role === 'admin';
-    var program = isAdmin ? (J.program || AB.ARTS_BOYS[0]) : s.program;
+    var allowedProgs = isAdmin ? AB.allPrograms() : (D && D.programs && D.programs.length ? D.programs : (AB.codeKey(s.program) === AB.ALL_SPORTS ? AB.SPORTS : [s.program]));
+    var program = allowedProgs.indexOf(J.program) >= 0 ? J.program : (isAdmin ? AB.ARTS_BOYS[0] : s.program);
+    var canSwitch = allowedProgs.length > 1;
     J.program = program;
     var cat = AB.categoryOf(program), allowed = AB.gendersFor(program);
     if (allowed.indexOf(J.gender) < 0) J.gender = allowed[0] || 'Boys';
     view.innerHTML = head('Judge Panel', 'Judging: ' + esc(program) + ' ' + catPill(cat), 'Score each chest number out of 100. You can change your marks until results are final.', s) +
-      '<div class="toolbar" style="grid-template-columns:' + (isAdmin ? '1.4fr ' : '') + 'auto 1fr auto">' +
-      (isAdmin ? '<select class="in" id="jProg">' + progOpts(program) + '</select>' : '') +
+      '<div class="toolbar" style="grid-template-columns:' + (canSwitch ? '1.4fr ' : '') + 'auto 1fr auto">' +
+      (canSwitch ? '<select class="in" id="jProg">' + (isAdmin ? progOpts(program) : '<optgroup label="Sports events">' + opts(allowedProgs, program) + '</optgroup>') + '</select>' : '') +
       '<div class="seg" id="jGender">' + AB.SECTIONS.map(function (g) { var dis = allowed.indexOf(g) < 0; return '<button data-g="' + g + '" class="' + (J.gender === g ? 'on' : '') + '"' + (dis ? ' disabled title="' + esc(allowed[0] || '') + ' only" style="opacity:.4"' : '') + '>' + g + '</button>'; }).join('') + '</div>' +
       (J.gender === 'Rawdha' ? '<div class="in" style="display:flex;align-items:center;color:var(--muted)">Rawdha 1 &amp; 2 together</div>'
         : '<select class="in" id="jGroup">' + opts(AB.GROUPS, J.group, 'All age groups') + '</select>') +
@@ -981,11 +983,12 @@
       var codes = D.judgeCodes || [];
       setCount(codes.length, 'programs');
       el.innerHTML = '<p class="muted small" style="margin:0 0 10px">Give each judge only the code for their program. Only Admin can see this page.</p>' +
-        table(['Program', 'Judge code', 'Judges logged in', ''], AB.allPrograms().filter(function (p) { return !A.q || p.toLowerCase().indexOf(A.q.toLowerCase()) >= 0; }).map(function (p) {
+        table(['Program', 'Judge code', 'Judges logged in', ''], AB.codeKeys().filter(function (p) { return !A.q || p.toLowerCase().indexOf(A.q.toLowerCase()) >= 0; }).map(function (p) {
           var c = codes.filter(function (x) { return x.program === p; })[0];
-          var who = {}; logs.forEach(function (l) { if (l.detail === 'Program: ' + p) who[l.name] = l.ts; });
+          var sports = p === AB.ALL_SPORTS;
+          var who = {}; logs.forEach(function (l) { var lp = String(l.detail || '').replace('Program: ', ''); if (AB.codeKey(lp) === p) who[l.name + (sports ? ' (' + lp + ')' : '')] = l.ts; });
           var names = Object.keys(who);
-          return '<tr><td><b>' + esc(p) + '</b><div class="small muted">' + esc(AB.categoryOf(p)) + ' · ' + esc(AB.gendersFor(p).join(', ')) + '</div></td>' +
+          return '<tr><td><b>' + esc(p) + '</b><div class="small muted">' + (sports ? 'One code for every sports event: ' + esc(AB.SPORTS.join(', ')) : esc(AB.categoryOf(p)) + ' · ' + esc(AB.gendersFor(p).join(', '))) + '</div></td>' +
             '<td><span class="chest" style="min-width:90px;letter-spacing:2px">' + esc(c ? c.code : '—') + '</span></td>' +
             '<td class="small">' + (names.length ? names.map(function (n) { return '<div><b>' + esc(n) + '</b> <span class="muted">· last ' + esc(String(who[n]).slice(5, 16)) + '</span></div>'; }).join('') : '<span class="muted">No judge yet</span>') + '</td>' +
             '<td><button class="btn sm ghost" data-newcode="' + esc(p) + '">New code</button></td></tr>';
