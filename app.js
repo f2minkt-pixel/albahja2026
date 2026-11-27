@@ -63,6 +63,17 @@
     var l = ciLook(st);
     return '<span class="ci ' + l[0] + '" data-ci="' + esc(chest) + '">' + l[1] + '</span>';
   }
+  /** Arts / Sports page switch. */
+  function catSeg(cur, id) {
+    return '<div class="seg big" id="' + id + '" style="max-width:360px;margin-bottom:14px">' + ['Arts', 'Sports'].map(function (c) {
+      return '<button type="button" data-catpick="' + c + '" class="' + (cur === c ? 'on' : '') + '">' + (c === 'Arts' ? '🎤 Arts' : '⚽ Sports') + '</button>';
+    }).join('') + '</div>';
+  }
+  function pickCat(e, id) {
+    var b = e.target.closest('#' + id + ' [data-catpick]'); if (!b) return null;
+    $$('#' + id + ' button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    return b.dataset.catpick;
+  }
   /** "Show: All | Boys | Girls | Rawdha" buttons — only changes what you see. */
   function secSeg(cur, id) {
     return '<div class="row" style="margin-bottom:12px;gap:8px"><span class="small muted" style="font-weight:600">Show</span><div class="seg" id="' + id + '">' +
@@ -356,22 +367,22 @@
   // =====================================================================
   // 2. LIVE SCOREBOARD (public)
   // =====================================================================
-  var SB = { cat: '', gender: '', group: '', program: '', results: null, programs: null, at: '', view: 'results' };
+  var SB = { cat: 'Arts', gender: '', group: '', program: '', results: null, programs: null, at: '', view: 'results' };
   function viewScoreboard() {
     view.innerHTML = '<div class="page-head"><div><div class="eyebrow">Public results</div><h2>Live Scoreboard</h2><p class="muted small">Top 3 in every program, updating as judges submit marks.</p></div>' +
       '<div class="live"><i></i><span id="sbAt">Live</span></div></div>' +
       '<div class="subtabs" id="sbView"><button data-view="results" class="' + (SB.view === 'results' ? 'on' : '') + '">Results</button>' +
       '<button data-view="programs" class="' + (SB.view === 'programs' ? 'on' : '') + '">Program status</button></div>' +
-      secSeg(SB.gender, 'sbSec') +
+      catSeg(SB.cat, 'sbCat') + secSeg(SB.gender, 'sbSec') +
       '<div class="toolbar t3">' +
-      '<select class="in" data-f="cat">' + opts(['Arts', 'Sports'], SB.cat, 'All categories') + '</select>' +
       '<select class="in" data-f="group">' + opts(AB.GROUPS, SB.group, 'All age groups') + '</select>' +
       '<select class="in" data-f="program">' + progOpts(SB.program, 'All programs') + '</select></div>' +
       '<div id="sbBody"><div class="loading"><span class="spin dark"></span></div></div>';
     view.onchange = function (e) { var f = e.target.dataset.f; if (f) { SB[f] = e.target.value; paintScoreboard(); } };
     view.onclick = function (e) {
-      var v = e.target.closest('[data-view]');
+      var v = e.target.closest('#sbView [data-view]');
       if (v) { SB.view = v.dataset.view; $$('#sbView button').forEach(function (b) { b.classList.toggle('on', b === v); }); paintScoreboard(); return; }
+      var c = pickCat(e, 'sbCat'); if (c) { SB.cat = c; SB.program = ''; viewScoreboard(); return; }
       var s = pickSec(e, 'sbSec'); if (s != null) { SB.gender = s; paintScoreboard(); }
     };
     fetchScoreboard(); every(fetchScoreboard);
@@ -437,7 +448,7 @@
   // =====================================================================
   // 3. TEACHER SCREENING
   // =====================================================================
-  var T = { q: '', group: '', cls: '', gender: '', program: '', status: '', view: 'entries' };
+  var T = { q: '', group: '', cls: '', gender: '', program: '', status: '', view: 'entries', cat: 'Arts', pcat: 'Arts' };
   var TSel = {}; // ticked entry IDs for bulk change
   function viewTeacher() {
     var s = sessFor('teacher');
@@ -452,8 +463,9 @@
         ? secSeg(T.gender, 'eSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" data-f="q" type="search" placeholder="Search chest no., name or phone" value="' + esc(T.q) + '" autocomplete="off"></div>' +
           '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>'
         : T.view === 'programs'
-        ? secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
-        : '<div id="tStats" class="stats"></div>' + entryToolbar(T) +
+        ? catSeg(T.pcat, 'tCat') + secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
+        : '<div class="notice info" style="margin:0 0 12px">Screening is for Arts items only — sports need no screening.</div>' +
+          '<div id="tStats" class="stats"></div>' + entryToolbar(T) +
           '<div class="row" style="margin:0 0 10px;gap:12px"><label class="row small" style="gap:8px;font-weight:600;cursor:pointer"><input type="checkbox" id="tAll" style="width:20px;height:20px;accent-color:var(--green)">Select all shown</label>' +
           '<span class="count grow" id="tCount" style="margin:0"></span></div>' +
           '<div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>' +
@@ -463,6 +475,7 @@
     view.onclick = function (e) {
       var tv = e.target.closest('[data-tview]'); if (tv) { T.view = tv.dataset.tview; viewTeacher(); return; }
       var so = e.target.closest('[data-student]'); if (so) { openStudent(so.dataset.student, s); return; }
+      var tc = pickCat(e, 'tCat'); if (tc) { T.pcat = tc; T.program = ''; viewTeacher(); return; }
       if (e.target.closest('#tBulkGo')) { bulkScreen(s); return; }
       if (e.target.closest('#tBulkClear')) { TSel = {}; paintTeacher(); return; }
       var st = e.target.closest('[data-done]'); if (st) { setProgramStatus(st, s, st.dataset.prog, st.dataset.section, st.dataset.done, st.dataset.to); return; }
@@ -491,7 +504,7 @@
   function filterEntries(F) {
     var q = F.q.trim().toLowerCase();
     return (D.assignments || []).filter(function (a) {
-      return (!F.program || a.program === F.program) && (!F.group || a.group === F.group) && (!F.cls || a.cls === F.cls) &&
+      return (!F.cat || a.category === F.cat) && (!F.program || a.program === F.program) && (!F.group || a.group === F.group) && (!F.cls || a.cls === F.cls) &&
         (!F.gender || AB.sectionOf(a) === F.gender) && (!F.status || a.screening === F.status) &&
         (!q || String(a.chest).indexOf(q) === 0 || String(a.name || '').toLowerCase().indexOf(q) >= 0);
     }).sort(function (x, y) { return Number(x.chest) - Number(y.chest) || x.program.localeCompare(y.program); });
@@ -500,7 +513,7 @@
     if (!D || !$('#tList')) return;
     if (T.view === 'students') { paintStudents(); return; }
     if (T.view === 'programs') {
-      $('#tList').innerHTML = programStatusHtml(AB.programList(D.assignments || [], D.scores || null, D.programStatus || []), { gender: T.gender, program: T.program }, true);
+      $('#tList').innerHTML = programStatusHtml(AB.programList(D.assignments || [], D.scores || null, D.programStatus || []), { gender: T.gender, program: T.program, cat: T.pcat }, true);
       return;
     }
     var all = filterEntries(Object.assign({}, T, { status: '' }));
@@ -779,7 +792,8 @@
   // =====================================================================
   // 5. JUDGE SCORING
   // =====================================================================
-  var J = { gender: 'Boys', group: '', selectedOnly: false, program: '', dirty: false };
+  var J = { gender: 'Boys', group: '', selectedOnly: false, program: '', dirty: false, teams: {} };
+  var TEAM_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
   function viewJudge() {
     var s = sessFor('judge');
     if (!s) return loginCard('judge', 'Judge Panel', 'Choose the program you are judging. Participants are shown by chest number only.',
@@ -794,12 +808,13 @@
     var cat = AB.categoryOf(program), allowed = AB.gendersFor(program);
     if (allowed.indexOf(J.gender) < 0) J.gender = allowed[0] || 'Boys';
     view.innerHTML = head('Judge Panel', 'Judging: ' + esc(program) + ' ' + catPill(cat), 'Score each chest number out of 100. You can change your marks until results are final.', s) +
-      '<div class="toolbar" style="grid-template-columns:' + (canSwitch ? '1.4fr ' : '') + 'auto 1fr auto">' +
+      '<div class="toolbar jbar" style="grid-template-columns:' + (canSwitch ? '1.4fr ' : '') + 'auto 1fr auto">' +
       (canSwitch ? '<select class="in" id="jProg">' + (isAdmin ? progOpts(program) : '<optgroup label="Sports events">' + opts(allowedProgs, program) + '</optgroup>') + '</select>' : '') +
       '<div class="seg" id="jGender">' + AB.SECTIONS.map(function (g) { var dis = allowed.indexOf(g) < 0; return '<button data-g="' + g + '" class="' + (J.gender === g ? 'on' : '') + '"' + (dis ? ' disabled title="' + esc(allowed[0] || '') + ' only" style="opacity:.4"' : '') + '>' + g + '</button>'; }).join('') + '</div>' +
       (J.gender === 'Rawdha' ? '<div class="in" style="display:flex;align-items:center;color:var(--muted)">Rawdha 1 &amp; 2 together</div>'
         : '<select class="in" id="jGroup">' + opts(AB.GROUPS, J.group, 'All age groups') + '</select>') +
-      '<label class="pick' + (J.selectedOnly ? ' on' : '') + '" style="min-height:46px"><input type="checkbox" id="jSel"' + (J.selectedOnly ? ' checked' : '') + '>Selected for program only</label></div>' +
+      (cat === 'Sports' ? '<span></span>' : '<label class="pick' + (J.selectedOnly ? ' on' : '') + '" style="min-height:46px"><input type="checkbox" id="jSel"' + (J.selectedOnly ? ' checked' : '') + '>Selected for program only</label>') + '</div>' +
+      (AB.TEAM_SPORTS.indexOf(program) >= 0 ? '<div class="notice info" style="margin:0 0 12px">Team sport: put each chest number in a team, type the team\'s score below and press <b>Apply</b> — every member gets the same score. You can still change any single score by hand.</div><div id="jTeams"></div>' : '') +
       '<div class="list" id="jList"><div class="loading"><span class="spin dark"></span></div></div>' +
       '<div class="savebar"><span class="grow" id="jSum"></span><button class="btn gold" id="jSave">Submit scores</button></div>';
     view.onclick = function (e) {
@@ -810,9 +825,27 @@
     view.onchange = function (e) {
       if (e.target.id === 'jGroup') { J.group = e.target.value; paintJudge(); }
       if (e.target.id === 'jSel') { J.selectedOnly = e.target.checked; e.target.parentNode.classList.toggle('on', J.selectedOnly); paintJudge(); }
-      if (e.target.id === 'jProg') { if (J.dirty && !confirm('Discard unsaved scores?')) { e.target.value = J.program; return; } J.program = e.target.value; J.dirty = false; viewJudge(); }
+      if (e.target.id === 'jProg') { if (J.dirty && !confirm('Discard unsaved scores?')) { e.target.value = J.program; return; } J.program = e.target.value; J.dirty = false; J.teams = {}; viewJudge(); }
     };
     view.oninput = function (e) { if (e.target.dataset.score != null || e.target.dataset.remarks != null) { J.dirty = true; paintJudgeSum(); } };
+    var baseChange = view.onchange;
+    view.onchange = function (e) {
+      if (e.target.dataset.team != null) { J.teams[e.target.dataset.team] = e.target.value; J.dirty = true; paintTeamBar(); paintJudgeSum(); return; }
+      baseChange(e);
+    };
+    var baseClick = view.onclick;
+    view.onclick = function (e) {
+      var ap = e.target.closest('[data-applyteam]');
+      if (ap) {
+        var tl = ap.dataset.applyteam, inp = $('[data-teamscore="' + tl + '"]'), v = inp && inp.value;
+        if (v === '' || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100) { toast('Enter a team score from 0 to 100.', true); if (inp) inp.focus(); return; }
+        var n = 0;
+        $$('[data-score]').forEach(function (x) { if (J.teams[x.dataset.score] === tl) { x.value = v; n++; } });
+        J.dirty = true; paintJudgeSum(); toast('Team ' + tl + ': ' + v + ' given to ' + n + ' player' + (n === 1 ? '' : 's') + ' — press Submit scores to save');
+        return;
+      }
+      baseClick(e);
+    };
     loadData(s).then(paintJudge);
     every(function () { loadData(s).then(function () { if (J.dirty || editingIn($('#jList'))) updateBadges(); else paintJudge(); }); });
   }
@@ -828,17 +861,36 @@
   }
   function paintJudge() {
     if (!D || !$('#jList')) return;
-    var list = judgeEntries(), lastGroup = null;
+    var list = judgeEntries(), lastGroup = null, team = AB.TEAM_SPORTS.indexOf(J.program) >= 0;
+    if (team && !J.dirty) list.forEach(function (a) { var m0 = myScore(a.chest); if (m0 && m0.team && J.teams[a.chest] == null) J.teams[a.chest] = m0.team; });
     $('#jList').innerHTML = list.length ? list.map(function (a) {
       var m = myScore(a.chest), sep = '';
       var cg = AB.compGroup(a);
       if (cg !== lastGroup) { lastGroup = cg; sep = groupHead(J.program, J.gender, cg); }
       return sep + '<div class="jrow' + (m ? ' saved' : '') + '"><span class="chest lg">' + esc(a.chest) + '</span>' +
-        '<div><div class="row" style="gap:6px">' + ci(a.chest, a.checkin) + '</div>' + (m ? '<div class="small" style="margin-top:4px;color:var(--ok)">saved ' + esc(m.score) + '</div>' : '') + '</div>' +
+        '<div><div class="row" style="gap:6px">' + ci(a.chest, a.checkin) +
+          (team ? '<select class="pill-sel" data-team="' + esc(a.chest) + '" aria-label="Team for chest ' + esc(a.chest) + '" style="background-color:#E3F1FF;color:#1F5FAE">' +
+            '<option value="">No team</option>' + TEAM_LETTERS.map(function (t) { return '<option value="' + t + '"' + (J.teams[a.chest] === t ? ' selected' : '') + '>Team ' + t + '</option>'; }).join('') + '</select>' : '') +
+          '</div>' + (m ? '<div class="small" style="margin-top:4px;color:var(--ok)">saved ' + esc(m.score) + (m.team ? ' · Team ' + esc(m.team) : '') + '</div>' : '') + '</div>' +
         '<input class="in score" data-score="' + esc(a.chest) + '" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="/100" value="' + (m ? esc(m.score) : '') + '" aria-label="Score for chest ' + esc(a.chest) + '">' +
         '<input class="in rm" data-remarks="' + esc(a.chest) + '" placeholder="Remarks (optional)" value="' + (m ? esc(m.remarks) : '') + '" maxlength="200"></div>';
     }).join('') : '<div class="empty">No participants for ' + esc(J.program) + ' · ' + esc(J.gender) + (J.group ? ' · ' + esc(J.group) : '') + (J.selectedOnly ? ' (selected only)' : '') + '.</div>';
+    paintTeamBar();
     paintJudgeSum();
+  }
+  /** Team score boxes for the teams in use (team sports only). */
+  function paintTeamBar() {
+    var bar = $('#jTeams'); if (!bar) return;
+    var shown = {}; $$('[data-team]').forEach(function (x) { if (x.value) shown[x.value] = (shown[x.value] || 0) + 1; });
+    var used = TEAM_LETTERS.filter(function (t) { return shown[t]; });
+    var keep = {}; $$('[data-teamscore]').forEach(function (x) { keep[x.dataset.teamscore] = x.value; });
+    bar.innerHTML = used.length ? '<div class="card" style="padding:14px;margin-bottom:12px"><h3 style="margin-bottom:10px">Team scores</h3><div class="row" style="gap:10px">' +
+      used.map(function (t) {
+        return '<div class="row" style="gap:6px;background:var(--green-ll);border-radius:12px;padding:6px 8px"><b>Team ' + t + '</b><span class="small muted">(' + shown[t] + ')</span>' +
+          '<input class="in" style="width:80px;min-height:38px;text-align:center" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="/100" data-teamscore="' + t + '" value="' + esc(keep[t] || '') + '">' +
+          '<button class="btn sm gold" data-applyteam="' + t + '">Apply</button></div>';
+      }).join('') + '</div></div>'
+      : '<p class="small muted" style="margin:0 0 12px">Choose a team for each chest number to get team score boxes here.</p>';
   }
   /** Program status per section + group: a Completed tag with Mark completed / Reopen (label only). */
   function statusOf(program, section, group) {
@@ -875,7 +927,7 @@
       if (isNaN(v) || v < 0 || v > 100) { bad = bad || inp; inp.classList.add('err'); return; }
       inp.classList.remove('err');
       var rm = $('[data-remarks="' + inp.dataset.score + '"]');
-      entries.push({ chest: inp.dataset.score, score: v, remarks: rm ? rm.value : '' });
+      entries.push({ chest: inp.dataset.score, score: v, remarks: rm ? rm.value : '', team: J.teams[inp.dataset.score] || '' });
     });
     if (bad) { toast('Scores must be between 0 and 100.', true); bad.focus(); return; }
     if (!entries.length) { toast('Enter at least one score first.', true); return; }
@@ -883,7 +935,7 @@
     api('score', { token: s.token, program: J.program, entries: entries }).then(function (r) {
       busy(btn, false);
       if (!r.ok) { toast(r.error, true); if (r.auth) { setSession(s.role, null); route(); } return; }
-      J.dirty = false; toast(r.saved + ' score' + (r.saved === 1 ? '' : 's') + ' saved — scoreboard updated');
+      J.dirty = false; J.teams = {}; toast(r.saved + ' score' + (r.saved === 1 ? '' : 's') + ' saved — scoreboard updated');
       loadData(s).then(paintJudge);
     });
   }
@@ -891,7 +943,7 @@
   // =====================================================================
   // 6. ADMIN
   // =====================================================================
-  var A = { tab: 'overview', q: '', F: { q: '', group: '', cls: '', gender: '', program: '', status: '' }, resProg: '' };
+  var A = { tab: 'overview', q: '', F: { q: '', group: '', cls: '', gender: '', program: '', status: '', cat: 'Arts' }, resProg: '' };
   var TABS = [['overview', 'Overview'], ['regs', 'Registrations'], ['entries', 'Program Entries'], ['scores', 'Scores'], ['results', 'Results'], ['programs', 'Programs'], ['judges', 'Judges'], ['logs', 'Staff Logs']];
   function viewAdmin() {
     var s = sessions.admin;
@@ -920,10 +972,10 @@
     $$('#aTabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === A.tab); });
     var b = $('#aBody');
     if (A.tab === 'overview') b.innerHTML = '<div id="aList"></div>';
-    else if (A.tab === 'entries') b.innerHTML = entryToolbar(A.F) + '<p class="count" id="aCount"></p><div id="aList"></div>';
-    else if (A.tab === 'programs') b.innerHTML = secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
-    else if (A.tab === 'results') b.innerHTML = secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
-    else b.innerHTML = (A.tab === 'regs' ? secSeg(A.F.gender, 'aSec') : '') + '<div class="toolbar t3"><input class="in search" type="search" data-aq="1" placeholder="Search…" value="' + esc(A.q) + '"></div><p class="count" id="aCount"></p><div id="aList"></div>';
+    else if (A.tab === 'entries') b.innerHTML = catSeg(A.F.cat, 'aCat') + entryToolbar(A.F) + '<p class="count" id="aCount"></p><div id="aList"></div>';
+    else if (A.tab === 'programs') b.innerHTML = catSeg(A.F.cat, 'aCat') + secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
+    else if (A.tab === 'results') b.innerHTML = catSeg(A.F.cat, 'aCat') + secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
+    else b.innerHTML = (A.tab === 'regs' ? secSeg(A.F.gender, 'aSec') : A.tab === 'scores' ? catSeg(A.F.cat, 'aCat') : '') + '<div class="toolbar t3"><input class="in search" type="search" data-aq="1" placeholder="Search…" value="' + esc(A.q) + '"></div><p class="count" id="aCount"></p><div id="aList"></div>';
     paintAdminList();
   }
   function table(cols, rows) {
@@ -971,11 +1023,11 @@
           '<td><select class="pill-sel st-' + stIdx(a.screening) + '" data-entry="' + esc(a.entry) + '">' + opts(AB.SCREENING, a.screening) + '</select></td><td class="small muted">' + esc(a.screenedBy) + '</td></tr>';
       }));
     } else if (A.tab === 'scores') {
-      var sl = sc.filter(function (x) { return match(x, A.q); }).sort(function (a, b) { return a.program.localeCompare(b.program) || Number(a.chest) - Number(b.chest); });
+      var sl = sc.filter(function (x) { return match(x, A.q) && AB.categoryOf(x.program) === A.F.cat; }).sort(function (a, b) { return a.program.localeCompare(b.program) || Number(a.chest) - Number(b.chest); });
       setCount(sl.length, 'marks');
       el.innerHTML = table(['Program', 'Group', 'Chest', 'Name', 'Judge', 'Score', 'Remarks', 'Time', ''], sl.map(function (x, i) {
         return '<tr><td>' + esc(x.program) + '</td><td>' + esc(shortGroup(x.group)) + '</td><td><span class="chest">' + esc(x.chest) + '</span> ' + ci(x.chest, checkinOf(x.chest)) + '</td><td>' + esc(x.name) + '</td><td>' + esc(x.judge) + '</td><td class="num"><b>' + esc(x.score) + '</b></td><td class="small">' + esc(x.remarks) + '</td><td class="small muted">' + esc(x.ts) + '</td>' +
-          '<td><button class="btn sm danger" data-delscore="' + i + '">Delete</button></td></tr>';
+          '<td style="white-space:nowrap"><button class="btn sm ghost" data-editscore="' + i + '">Edit</button> <button class="btn sm danger" data-delscore="' + i + '">Delete</button></td></tr>';
       }));
       A._scoreList = sl;
     } else if (A.tab === 'judges') {
@@ -994,9 +1046,9 @@
             '<td><button class="btn sm ghost" data-newcode="' + esc(p) + '">New code</button></td></tr>';
         }));
     } else if (A.tab === 'programs') {
-      el.innerHTML = programStatusHtml(AB.programList(as, sc, D.programStatus || []), { gender: A.F.gender, program: A.resProg }, true);
+      el.innerHTML = programStatusHtml(AB.programList(as, sc, D.programStatus || []), { gender: A.F.gender, program: A.resProg, cat: A.F.cat }, true);
     } else if (A.tab === 'results') {
-      var rs = AB.computeResults(as, sc).filter(function (b) { return (!A.resProg || b.program === A.resProg) && (!A.F.gender || b.gender === A.F.gender); });
+      var rs = AB.computeResults(as, sc).filter(function (b) { return b.category === A.F.cat && (!A.resProg || b.program === A.resProg) && (!A.F.gender || b.gender === A.F.gender); });
       A._results = rs;
       el.innerHTML = rs.length ? rs.map(function (b) {
         return '<div class="row" style="margin:18px 0 8px;gap:10px"><h3 class="grow">' + esc(b.program) + ' · ' + esc(b.gender) + ' · ' + esc(b.group) + '</h3>' + doneBtn(b.program, b.gender, b.group) + '</div>' +
@@ -1013,6 +1065,7 @@
     }
   }
   function adminClick(e, s) {
+    var ac = pickCat(e, 'aCat'); if (ac) { A.F.cat = ac; A.F.program = ''; A.resProg = ''; paintAdmin(); return; }
     var t, sc = pickSec(e, 'eSec');
     if (sc == null) sc = pickSec(e, 'aSec');
     if (sc != null) { A.F.gender = sc; paintAdminList(); return; }
@@ -1042,6 +1095,20 @@
       var r = D.registrations.filter(function (x) { return String(x.chest) === t.dataset.del; })[0];
       if (!confirm('Delete chest ' + r.chest + ' — ' + r.name + '?\nThis removes the registration, all program entries and all marks. It cannot be undone.')) return;
       api('deleteReg', { token: s.token, chest: r.chest }).then(function (x) { if (!x.ok) return toast(x.error, true); toast('Deleted chest ' + r.chest); loadData(s).then(paintAdmin); });
+      return;
+    }
+    if ((t = e.target.closest('[data-editscore]'))) {
+      var ms = A._scoreList[Number(t.dataset.editscore)];
+      var nv = prompt('New score for chest ' + ms.chest + ' in ' + ms.program + ' (judge: ' + ms.judge + ')\nEnter 0–100:', ms.score);
+      if (nv == null || nv === '' || String(nv) === String(ms.score)) return;
+      var num = Number(nv);
+      if (isNaN(num) || num < 0 || num > 100) { toast('Score must be between 0 and 100.', true); return; }
+      busy(t, true, '');
+      api('score', { token: s.token, program: ms.program, judgeName: ms.judge, entries: [{ chest: ms.chest, score: num, remarks: ms.remarks, team: ms.team }] }).then(function (x) {
+        busy(t, false);
+        if (!x.ok) return toast(x.error, true);
+        toast('Chest ' + ms.chest + ' · ' + ms.program + ' → ' + num); loadData(s).then(paintAdmin);
+      });
       return;
     }
     if ((t = e.target.closest('[data-delscore]'))) {

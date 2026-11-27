@@ -38,6 +38,8 @@ var AB = (function () {
   // Every arts item once; boys' items keep codes A01–A11, girls-only items follow (A12+).
   var ARTS_ALL = ARTS_BOYS.concat(ARTS_GIRLS.filter(function (x) { return ARTS_BOYS.indexOf(x) < 0; }));
   var MAX_PER_CATEGORY = 3;
+  // Team sports: the judge puts chest numbers into teams and gives each team one score (every member gets it).
+  var TEAM_SPORTS = ['Football', 'VolleyBall', 'Tug of War', 'Kabaddi'];
   var SCREENING = ['Confirmed Reg', 'Screening Pending', 'Need Practice', 'Selected for Program'];
   var PRESENT = 'Present', ABSENT = 'Not Present', CHECKED_OUT = 'Checked Out';
   var POINTS = { 1: 5, 2: 3, 3: 1 };
@@ -74,7 +76,7 @@ var AB = (function () {
       ['category', 'Category'], ['screening', 'Screening Status'], ['checkin', 'Check-In Status'],
       ['screenedBy', 'Screened By']],
     Scores: [['program', 'Program Name'], ['group', 'Group'], ['chest', 'Chest No'], ['name', 'Student Name'],
-      ['judge', 'Judge Name'], ['score', 'Score'], ['remarks', 'Remarks'], ['ts', 'Timestamp']],
+      ['judge', 'Judge Name'], ['score', 'Score'], ['remarks', 'Remarks'], ['ts', 'Timestamp'], ['team', 'Team']],
     Live_Leaderboard: [['program', 'Program Name'], ['category', 'Category'], ['gender', 'Gender'],
       ['group', 'Group'], ['rank', 'Rank'], ['chest', 'Chest No'], ['name', 'Student Name'], ['cls', 'Class'],
       ['avg', 'Average Score'], ['total', 'Total Score'], ['judges', 'Judges'], ['updated', 'Updated']],
@@ -434,7 +436,7 @@ var AB = (function () {
       if (!a) fail('Chest ' + e.chest + ' is not registered for ' + program + '.');
       var v = Number(e.score);
       if (isNaN(v) || v < 0 || v > 100) fail('Score for chest ' + e.chest + ' must be between 0 and 100.');
-      var row = { program: program, group: a.group, chest: a.chest, name: a.name, judge: judge, score: round2(v), remarks: clean(e.remarks, 200), ts: now };
+      var row = { program: program, group: a.group, chest: a.chest, name: a.name, judge: judge, score: round2(v), remarks: clean(e.remarks, 200), ts: now, team: clean(e.team, 20) };
       var i = -1;
       scores.forEach(function (x, j) { if (x.program === program && same(x.chest, a.chest) && x.judge === judge) i = j; });
       if (i >= 0) scores[i] = row; else scores.push(row);
@@ -588,7 +590,7 @@ var AB = (function () {
 
   return {
     CLASSES: CLASSES, GROUPS: GROUPS, GENDERS: GENDERS, SPORTS: SPORTS, ARTS_BOYS: ARTS_BOYS, ARTS_GIRLS: ARTS_GIRLS, ARTS_ALL: ARTS_ALL, gendersFor: gendersFor,
-    MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, CHECKED_OUT: CHECKED_OUT, POINTS: POINTS,
+    MAX_PER_CATEGORY: MAX_PER_CATEGORY, TEAM_SPORTS: TEAM_SPORTS, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, CHECKED_OUT: CHECKED_OUT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
     isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,

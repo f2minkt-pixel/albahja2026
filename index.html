@@ -144,6 +144,28 @@ select.pill-sel{border:0;border-radius:999px;font-size:12.5px;font-weight:600;pa
 .item .meta{font-size:12.5px;color:var(--muted);display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:2px}
 .item .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 [hidden]{display:none!important}
+/* ---- fit every screen size ---- */
+.grid2>*,.grid3>*,.lb>*,.boards>*,.toolbar>*,.item>*,.vcard>*,.jrow>*{min-width:0}
+.seg{max-width:100%;flex-wrap:wrap}
+.place .nm span{overflow-wrap:anywhere}
+img,select,input,textarea{max-width:100%}
+@media (max-width:700px){
+  .jbar{grid-template-columns:1fr 1fr!important}
+  .jbar>#jProg,.jbar>.seg,.jbar>.pick{grid-column:1/-1}
+  .jbar>.seg{display:grid;grid-template-columns:repeat(3,1fr)}
+  .page-head{align-items:flex-start}
+  .whoami{width:100%;justify-content:space-between}
+  .savebar{flex-wrap:wrap}
+  .modal .card{padding:16px}
+  .boards{grid-template-columns:1fr}
+}
+@media (max-width:380px){
+  .vcard{grid-template-columns:1fr!important}
+  .vcard .chest.lg{justify-self:start}
+  .vcard>*,.vcard .notes,.vcard .addnote,.vcard .tog{grid-column:1/-1!important}
+  .seg button{padding:8px 12px}
+  .stats{grid-template-columns:1fr 1fr}
+}
 .item.picked{box-shadow:inset 4px 0 0 var(--green),var(--shadow);background:var(--green-ll)}
 .empty{text-align:center;color:var(--muted);padding:40px 16px;background:#fff;border-radius:14px;border:1.5px dashed var(--line)}
 .count{font-size:13px;color:var(--muted);margin:0 0 10px}
