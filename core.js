@@ -15,6 +15,18 @@ var AB = (function () {
   var CLASSES = ['CRE', 'Class 7', 'Class 6', 'Class 5', 'Class 4', 'Class 3', 'Class 2', 'Class 1', 'Rawdha 2', 'Rawdha 1'];
   var GROUPS = ['Senior (Age 14+)', 'Junior (Age 11-13)', 'Sub-Junior (Age 8-10)', 'Kids (Age 5-7)'];
   var GENDERS = ['Boys', 'Girls'];
+  // Rawdha (KG): Rawdha 1 & 2. Registration is the same form; for results and viewing, Rawdha boys
+  // and girls (all ages) form one combined section. Rawdha has no sports.
+  var RAWDHA_CLASSES = ['Rawdha 2', 'Rawdha 1'];
+  var RAWDHA_GROUP = 'Rawdha (Rawdha 1 & 2)';
+  var ALL_GROUPS = GROUPS.concat([RAWDHA_GROUP]);
+  var SECTIONS = ['Boys', 'Girls', 'Rawdha'];
+  var PROGRAM_STATUS = ['Open', 'Completed'];
+  function isRawdha(cls) { return RAWDHA_CLASSES.indexOf(cls) >= 0; }
+  /** Viewing/competition section of a registration or entry: Boys, Girls, or Rawdha (mixed). */
+  function sectionOf(x) { return isRawdha(x.cls) ? 'Rawdha' : x.gender; }
+  /** Competition group: Rawdha is one combined group regardless of age group. */
+  function compGroup(x) { return isRawdha(x.cls) ? RAWDHA_GROUP : x.group; }
   var SPORTS = ['Football', 'VolleyBall', 'Tug of War', 'Arm Wrestling', 'Sack Race', 'Lemon & Spoon',
     'Musical Chair (Without Music)', 'Kabaddi'];
   var ARTS_BOYS = ['Skit', 'Speech - English', 'Speech - Malayalam', 'Speech - Arabic', 'Song - Malayalam',
@@ -22,6 +34,7 @@ var AB = (function () {
   var ARTS_GIRLS = ['Islamic Speech - Malayalam', 'Islamic Speech - Arabic', 'Islamic Speech - English', 'Islamic Song - Malayalam', 'Islamic Song - Arabic', 'Islamic Song - English', 'Group Song',
     'Story Telling', 'Action Song', 'Dua', 'Hadees', 'Quran Recitation', 'Skit',
     'Quran Recitation with Translation', 'Hadees with Translation'];
+  var ARTS_RAWDHA = ARTS_GIRLS.slice(); // Rawdha uses the girls' Arts list, open to boys and girls.
   // Every arts item once; boys' items keep codes A01–A11, girls-only items follow (A12+).
   var ARTS_ALL = ARTS_BOYS.concat(ARTS_GIRLS.filter(function (x) { return ARTS_BOYS.indexOf(x) < 0; }));
   var MAX_PER_CATEGORY = 3;
@@ -38,13 +51,16 @@ var AB = (function () {
   }
   function categoryOf(program) { return SPORTS.indexOf(program) >= 0 ? 'Sports' : 'Arts'; }
   function allPrograms() { return SPORTS.concat(ARTS_ALL); }
-  /** Which genders can enter a program. */
+  /** Which sections (Boys / Girls / Rawdha) can enter a program. */
   function gendersFor(program) {
     var g = [];
     if (SPORTS.indexOf(program) >= 0 || ARTS_BOYS.indexOf(program) >= 0) g.push('Boys');
     if (ARTS_GIRLS.indexOf(program) >= 0) g.push('Girls');
+    if (ARTS_RAWDHA.indexOf(program) >= 0) g.push('Rawdha');
     return g;
   }
+  /** Items a student may choose. */
+  function artsFor(gender, cls) { return isRawdha(cls) ? ARTS_RAWDHA : gender === 'Boys' ? ARTS_BOYS : ARTS_GIRLS; }
   function pad2(n) { return n < 10 ? '0' + n : String(n); }
 
   var SCHEMA = {
@@ -61,8 +77,12 @@ var AB = (function () {
     Live_Leaderboard: [['program', 'Program Name'], ['category', 'Category'], ['gender', 'Gender'],
       ['group', 'Group'], ['rank', 'Rank'], ['chest', 'Chest No'], ['name', 'Student Name'], ['cls', 'Class'],
       ['avg', 'Average Score'], ['total', 'Total Score'], ['judges', 'Judges'], ['updated', 'Updated']],
-    Staff_Logs: [['role', 'Role'], ['name', 'Name'], ['phone', 'Phone'], ['ts', 'Login Time'], ['detail', 'Detail']]
+    Staff_Logs: [['role', 'Role'], ['name', 'Name'], ['phone', 'Phone'], ['ts', 'Login Time'], ['detail', 'Detail']],
+    Program_Status: [['program', 'Program Name'], ['section', 'Section'], ['group', 'Group'], ['status', 'Status'],
+      ['by', 'Marked By'], ['ts', 'Time']]
   };
+  function statusKey(program, section, group) { return program + '|' + section + '|' + group; }
+  function statusMap(rows) { var m = {}; rows.forEach(function (r) { m[statusKey(r.program, r.section, r.group)] = r; }); return m; }
 
   // ---------- helpers ----------
   /** Full name = at least two words, each with 2+ letters (e.g. "Fathima Rahman"). */
@@ -109,8 +129,9 @@ var AB = (function () {
       var list = byEntry[a.program + '|' + a.chest];
       if (!list || !list.length) return;
       var total = list.reduce(function (x, y) { return x + y; }, 0);
-      var key = a.program + '|' + a.gender + '|' + a.group;
-      var b = buckets[key] = buckets[key] || { program: a.program, category: a.category || categoryOf(a.program), gender: a.gender, group: a.group, entries: [] };
+      var sec = sectionOf(a), grp = compGroup(a); // Rawdha boys & girls share one bucket
+      var key = a.program + '|' + sec + '|' + grp;
+      var b = buckets[key] = buckets[key] || { program: a.program, category: a.category || categoryOf(a.program), gender: sec, group: grp, entries: [] };
       b.entries.push({ chest: a.chest, name: a.name, cls: a.cls, group: a.group, gender: a.gender, total: round2(total), avg: round2(total / list.length), judges: list.length });
     });
     var out = Object.keys(buckets).map(function (k) { return buckets[k]; });
@@ -122,7 +143,7 @@ var AB = (function () {
     });
     out.sort(function (x, y) {
       return x.category.localeCompare(y.category) || allPrograms().indexOf(x.program) - allPrograms().indexOf(y.program) ||
-        x.gender.localeCompare(y.gender) || GROUPS.indexOf(x.group) - GROUPS.indexOf(y.group);
+        SECTIONS.indexOf(x.gender) - SECTIONS.indexOf(y.gender) || ALL_GROUPS.indexOf(x.group) - ALL_GROUPS.indexOf(y.group);
     });
     return out;
   }
@@ -177,7 +198,8 @@ var AB = (function () {
     if (GROUPS.indexOf(group) < 0) fail('Please choose the age group.');
     var sports = uniq(p.sports), arts = uniq(p.arts);
     if (gender === 'Girls' && sports.length) fail('Sports items are open to boys only.');
-    var artsList = gender === 'Boys' ? ARTS_BOYS : ARTS_GIRLS;
+    if (isRawdha(cls) && sports.length) fail('Rawdha has Arts items only.');
+    var artsList = artsFor(gender, cls);
     sports.forEach(function (s) { if (SPORTS.indexOf(s) < 0) fail('Unknown sports item: ' + s); });
     arts.forEach(function (s) { if (artsList.indexOf(s) < 0) fail('Item not available: ' + s); });
     if (sports.length > MAX_PER_CATEGORY) fail('Maximum 3 Sports items.');
@@ -253,10 +275,12 @@ var AB = (function () {
       out.assignments = assigns.filter(function (a) { return a.program === s.program; })
         .map(function (a) { return { entry: a.entry, chest: a.chest, gender: a.gender, cls: a.cls, group: a.group, program: a.program, category: a.category, screening: a.screening, checkin: a.checkin }; });
       out.scores = db.load('Scores').filter(function (x) { return x.judge === s.name && x.program === s.program; });
+      out.programStatus = db.load('Program_Status').filter(function (x) { return x.program === s.program; });
       return out;
     }
     out.assignments = assigns;
     out.registrations = db.load('Registrations');
+    out.programStatus = db.load('Program_Status');
     if (s.role === 'admin') {
       out.scores = db.load('Scores');
       out.staffLogs = db.load('Staff_Logs');
@@ -343,8 +367,28 @@ var AB = (function () {
     var sc = db.load('Scores');
     sc.forEach(function (r) { if (same(r.chest, p.chest)) { r.name = reg.name; r.group = reg.group; } });
     db.save('Scores', sc);
+    stripRawdhaSports(db);
     rebuildLeaderboard(db, env);
     return { ok: true };
+  }
+
+  /** Rawdha has no sports: remove sports items (entries and their marks) from Rawdha registrations. */
+  function stripRawdhaSports(db) {
+    var regs = db.load('Registrations'), chests = {}, removed = 0;
+    regs.forEach(function (r) { if (isRawdha(r.cls) && r.sports) { chests[String(r.chest)] = 1; r.sports = ''; } });
+    if (!Object.keys(chests).length) return 0;
+    db.save('Registrations', regs);
+    var drop = function (a) { return chests[String(a.chest)] && SPORTS.indexOf(a.program) >= 0; };
+    var pa = db.load('Program_Assignments');
+    removed = pa.filter(drop).length;
+    db.save('Program_Assignments', pa.filter(function (a) { return !drop(a); }));
+    db.save('Scores', db.load('Scores').filter(function (x) { return !drop(x); }));
+    return removed;
+  }
+  function cleanupRawdha(db, env) {
+    var n = stripRawdhaSports(db);
+    rebuildLeaderboard(db, env);
+    return { ok: true, removedEntries: n };
   }
 
   function deleteReg(db, env, s, p) {
@@ -366,23 +410,44 @@ var AB = (function () {
     return { ok: true };
   }
 
+  /** Tag a program (per section + age group) as Completed or Open again. Label only — marks stay editable. */
+  function setStatus(db, env, s, p) {
+    var program = s.role === 'judge' ? s.program : p.program;
+    if (allPrograms().indexOf(program) < 0) fail('Unknown program.');
+    if (SECTIONS.indexOf(p.section) < 0) fail('Choose Boys, Girls or Rawdha first.');
+    if (ALL_GROUPS.indexOf(p.group) < 0) fail('Choose one age group first.');
+    if (PROGRAM_STATUS.indexOf(p.status) < 0) fail('Unknown status.');
+    var rows = db.load('Program_Status'), k = statusKey(program, p.section, p.group), hit = false;
+    var row = { program: program, section: p.section, group: p.group, status: p.status, by: s.name, ts: env.now() };
+    rows.forEach(function (r, i) { if (statusKey(r.program, r.section, r.group) === k) { rows[i] = row; hit = true; } });
+    if (!hit) rows.push(row);
+    db.save('Program_Status', rows);
+    return { ok: true, status: row };
+  }
+
   function scoreboard(db) {
     var res = computeResults(db.load('Program_Assignments'), db.load('Scores'));
+    var st = statusMap(db.load('Program_Status'));
     // Public view: podium only (top 3), no phone numbers.
-    res.forEach(function (b) { b.entries = b.entries.filter(function (e) { return e.rank <= 3; }); });
+    res.forEach(function (b) {
+      b.entries = b.entries.filter(function (e) { return e.rank <= 3; });
+      var r = st[statusKey(b.program, b.gender, b.group)];
+      b.completed = !!(r && r.status === 'Completed');
+    });
     return { ok: true, results: res };
   }
 
-  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1 };
+  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1 };
   var ROLES = {
     data: ['admin', 'teacher', 'volunteer', 'judge'],
     screen: ['admin', 'teacher'],
     checkin: ['admin', 'volunteer'],
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
-    updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin']
+    updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
+    setStatus: ['admin', 'judge'], cleanupRawdha: ['admin']
   };
-  var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore };
+  var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha };
 
   function handle(db, env, action, p) {
     p = p || {};
@@ -408,6 +473,8 @@ var AB = (function () {
     MAX_PER_CATEGORY: MAX_PER_CATEGORY, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
-    isFullName: isFullName
+    isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
+    SECTIONS: SECTIONS, ARTS_RAWDHA: ARTS_RAWDHA, isRawdha: isRawdha, sectionOf: sectionOf, artsFor: artsFor,
+    statusKey: statusKey, statusMap: statusMap, compGroup: compGroup
   };
 })();
