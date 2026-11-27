@@ -425,16 +425,40 @@ var AB = (function () {
     return { ok: true, status: row };
   }
 
+  /** Every program that has entries, per section + competition group, with Pending/Completed status. */
+  function programList(assigns, scores, statusRows) {
+    var st = statusMap(statusRows), scored = {}, t = {};
+    (scores || []).forEach(function (x) { scored[x.program + '|' + x.chest] = 1; });
+    assigns.forEach(function (a) {
+      var sec = sectionOf(a), grp = compGroup(a), k = statusKey(a.program, sec, grp);
+      var r = t[k] = t[k] || { program: a.program, category: a.category || categoryOf(a.program), section: sec, group: grp, entries: 0, scored: scores ? 0 : null };
+      r.entries++;
+      if (scores && scored[a.program + '|' + a.chest]) r.scored++;
+    });
+    return Object.keys(t).map(function (k) {
+      var r = t[k], s = st[k];
+      r.status = s && s.status === 'Completed' ? 'Completed' : 'Pending';
+      r.by = s && s.status === 'Completed' ? s.by : '';
+      r.ts = s && s.status === 'Completed' ? s.ts : '';
+      return r;
+    }).sort(function (x, y) {
+      return x.category.localeCompare(y.category) || allPrograms().indexOf(x.program) - allPrograms().indexOf(y.program) ||
+        SECTIONS.indexOf(x.section) - SECTIONS.indexOf(y.section) || ALL_GROUPS.indexOf(x.group) - ALL_GROUPS.indexOf(y.group);
+    });
+  }
+
   function scoreboard(db) {
-    var res = computeResults(db.load('Program_Assignments'), db.load('Scores'));
-    var st = statusMap(db.load('Program_Status'));
+    var assigns = db.load('Program_Assignments'), scores = db.load('Scores'), statusRows = db.load('Program_Status');
+    var res = computeResults(assigns, scores);
+    var st = statusMap(statusRows);
     // Public view: podium only (top 3), no phone numbers.
     res.forEach(function (b) {
       b.entries = b.entries.filter(function (e) { return e.rank <= 3; });
       var r = st[statusKey(b.program, b.gender, b.group)];
       b.completed = !!(r && r.status === 'Completed');
     });
-    return { ok: true, results: res };
+    var programs = programList(assigns, scores, statusRows).map(function (p) { delete p.by; return p; });
+    return { ok: true, results: res, programs: programs };
   }
 
   var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1 };
@@ -445,7 +469,7 @@ var AB = (function () {
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
     updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
-    setStatus: ['admin', 'judge'], cleanupRawdha: ['admin']
+    setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin']
   };
   var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha };
 
@@ -475,6 +499,6 @@ var AB = (function () {
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
     isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
     SECTIONS: SECTIONS, ARTS_RAWDHA: ARTS_RAWDHA, isRawdha: isRawdha, sectionOf: sectionOf, artsFor: artsFor,
-    statusKey: statusKey, statusMap: statusMap, compGroup: compGroup
+    statusKey: statusKey, statusMap: statusMap, compGroup: compGroup, programList: programList
   };
 })();

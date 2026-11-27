@@ -339,10 +339,12 @@
   // =====================================================================
   // 2. LIVE SCOREBOARD (public)
   // =====================================================================
-  var SB = { cat: '', gender: '', group: '', program: '', results: null, at: '' };
+  var SB = { cat: '', gender: '', group: '', program: '', results: null, programs: null, at: '', view: 'results' };
   function viewScoreboard() {
     view.innerHTML = '<div class="page-head"><div><div class="eyebrow">Public results</div><h2>Live Scoreboard</h2><p class="muted small">Top 3 in every program, updating as judges submit marks.</p></div>' +
       '<div class="live"><i></i><span id="sbAt">Live</span></div></div>' +
+      '<div class="subtabs" id="sbView"><button data-view="results" class="' + (SB.view === 'results' ? 'on' : '') + '">Results</button>' +
+      '<button data-view="programs" class="' + (SB.view === 'programs' ? 'on' : '') + '">Program status</button></div>' +
       secSeg(SB.gender, 'sbSec') +
       '<div class="toolbar t3">' +
       '<select class="in" data-f="cat">' + opts(['Arts', 'Sports'], SB.cat, 'All categories') + '</select>' +
@@ -350,19 +352,45 @@
       '<select class="in" data-f="program">' + progOpts(SB.program, 'All programs') + '</select></div>' +
       '<div id="sbBody"><div class="loading"><span class="spin dark"></span></div></div>';
     view.onchange = function (e) { var f = e.target.dataset.f; if (f) { SB[f] = e.target.value; paintScoreboard(); } };
-    view.onclick = function (e) { var s = pickSec(e, 'sbSec'); if (s != null) { SB.gender = s; paintScoreboard(); } };
+    view.onclick = function (e) {
+      var v = e.target.closest('[data-view]');
+      if (v) { SB.view = v.dataset.view; $$('#sbView button').forEach(function (b) { b.classList.toggle('on', b === v); }); paintScoreboard(); return; }
+      var s = pickSec(e, 'sbSec'); if (s != null) { SB.gender = s; paintScoreboard(); }
+    };
     fetchScoreboard(); every(fetchScoreboard);
+  }
+  /** Pending / Completed program lists. withButtons = staff view with Mark completed / Reopen. */
+  function programStatusHtml(list, F, withButtons) {
+    var rows = list.filter(function (p) {
+      return (!F.cat || p.category === F.cat) && (!F.gender || p.section === F.gender) &&
+        (!F.group || p.group === F.group || p.section === 'Rawdha') && (!F.program || p.program === F.program);
+    });
+    if (!rows.length) return '<div class="empty">No programs with registrations for this selection yet.</div>';
+    function col(title, items, done) {
+      return '<section class="card" style="padding:16px"><div class="row" style="margin-bottom:10px"><h3 class="grow">' + title + '</h3>' +
+        '<span class="pill ' + (done ? 'st-3' : 'st-1') + '">' + items.length + '</span></div>' +
+        (items.length ? items.map(function (p) {
+          return '<div class="place" style="border-top:1px solid var(--line);border-radius:0;padding:10px 4px">' +
+            '<div class="nm"><b>' + esc(p.program) + '</b><span>' + esc(p.section) + (p.section === 'Rawdha' ? '' : ' · ' + esc(shortGroup(p.group))) +
+            ' · ' + p.entries + ' entr' + (p.entries === 1 ? 'y' : 'ies') + (p.scored == null ? '' : ' · ' + p.scored + ' scored') + '</span></div>' +
+            (withButtons ? doneBtn(p.program, p.section, p.group).replace('<span class="pill st-3"', '<span hidden class="pill st-3"')
+              : (done ? '<span class="pill st-3">✓ Completed</span>' : '<span class="pill st-1">Pending</span>')) + '</div>';
+        }).join('') : '<p class="muted small" style="margin:0">' + (done ? 'Nothing completed yet.' : 'All done!') + '</p>') + '</section>';
+    }
+    var pending = rows.filter(function (p) { return p.status !== 'Completed'; }), done = rows.filter(function (p) { return p.status === 'Completed'; });
+    return '<div class="grid2" style="align-items:start">' + col('Pending', pending, false) + col('✓ Completed', done, true) + '</div>';
   }
   function fetchScoreboard() {
     return api('scoreboard').then(function (r) {
       if (!r.ok) { toast(r.error, true); return; }
-      SB.results = r.results; SB.at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      SB.results = r.results; SB.programs = r.programs || []; SB.at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       paintScoreboard();
     });
   }
   function paintScoreboard() {
     var b = $('#sbBody'); if (!b || !SB.results) return;
     $('#sbAt').textContent = 'Live · updated ' + SB.at;
+    if (SB.view === 'programs') { b.innerHTML = programStatusHtml(SB.programs || [], SB, false); return; }
     var res = SB.results.filter(function (x) {
       return (!SB.cat || x.category === SB.cat) && (!SB.gender || x.gender === SB.gender) &&
         (!SB.group || x.group === SB.group || (x.gender === 'Rawdha' && SB.gender === 'Rawdha')) && (!SB.program || x.program === SB.program);
@@ -392,15 +420,23 @@
   // =====================================================================
   // 3. TEACHER SCREENING
   // =====================================================================
-  var T = { q: '', group: '', cls: '', gender: '', program: '', status: '' };
+  var T = { q: '', group: '', cls: '', gender: '', program: '', status: '', view: 'entries' };
   function viewTeacher() {
     var s = sessFor('teacher');
     if (!s) return loginCard('teacher', 'Teacher Screening', 'Screen participants for each program. Your login is recorded.',
       fld('Teacher name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required') +
       fld('Special access code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Open screening portal');
-    view.innerHTML = head('Screening stage', 'Teacher Screening', 'Update each entry\'s status — changes save instantly to the sheet.', s) +
-      '<div id="tStats" class="stats"></div>' + entryToolbar(T) + '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>';
-    view.onclick = function (e) { var sc = pickSec(e, 'eSec'); if (sc != null) { T.gender = sc; paintTeacher(); } };
+    var tabs = '<div class="subtabs" id="tView"><button data-tview="entries" class="' + (T.view === 'entries' ? 'on' : '') + '">Screening</button>' +
+      '<button data-tview="programs" class="' + (T.view === 'programs' ? 'on' : '') + '">Program status</button></div>';
+    view.innerHTML = head('Screening stage', 'Teacher Screening', 'Update each entry\'s status — changes save instantly to the sheet.', s) + tabs +
+      (T.view === 'programs'
+        ? secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
+        : '<div id="tStats" class="stats"></div>' + entryToolbar(T) + '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>');
+    view.onclick = function (e) {
+      var tv = e.target.closest('[data-tview]'); if (tv) { T.view = tv.dataset.tview; viewTeacher(); return; }
+      var st = e.target.closest('[data-done]'); if (st) { setProgramStatus(st, s, st.dataset.prog, st.dataset.section, st.dataset.done, st.dataset.to); return; }
+      var sc = pickSec(e, 'eSec'); if (sc != null) { T.gender = sc; paintTeacher(); }
+    };
     view.oninput = view.onchange = function (e) {
       var t = e.target;
       if (t.dataset.f) { T[t.dataset.f] = t.value; paintTeacher(); return; }
@@ -426,6 +462,10 @@
   }
   function paintTeacher() {
     if (!D || !$('#tList')) return;
+    if (T.view === 'programs') {
+      $('#tList').innerHTML = programStatusHtml(AB.programList(D.assignments || [], D.scores || null, D.programStatus || []), { gender: T.gender, program: T.program }, true);
+      return;
+    }
     var all = filterEntries(Object.assign({}, T, { status: '' }));
     $('#tStats').innerHTML = AB.SCREENING.map(function (st, i) {
       var n = all.filter(function (a) { return a.screening === st; }).length;
@@ -592,7 +632,7 @@
       var cg = AB.compGroup(a);
       if (cg !== lastGroup) { lastGroup = cg; sep = groupHead(J.program, J.gender, cg); }
       return sep + '<div class="jrow' + (m ? ' saved' : '') + '"><span class="chest lg">' + esc(a.chest) + '</span>' +
-        '<div><div class="row" style="gap:6px">' + ci(a.chest, a.checkin) + stPill(a.screening) + '</div><div class="small muted" style="margin-top:4px">' + esc(a.cls) + ' · ' + esc(shortGroup(a.group)) + (m ? ' · <span style="color:var(--ok)">saved ' + esc(m.score) + '</span>' : '') + '</div></div>' +
+        '<div><div class="row" style="gap:6px">' + ci(a.chest, a.checkin) + '</div>' + (m ? '<div class="small" style="margin-top:4px;color:var(--ok)">saved ' + esc(m.score) + '</div>' : '') + '</div>' +
         '<input class="in score" data-score="' + esc(a.chest) + '" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="/100" value="' + (m ? esc(m.score) : '') + '" aria-label="Score for chest ' + esc(a.chest) + '">' +
         '<input class="in rm" data-remarks="' + esc(a.chest) + '" placeholder="Remarks (optional)" value="' + (m ? esc(m.remarks) : '') + '" maxlength="200"></div>';
     }).join('') : '<div class="empty">No participants for ' + esc(J.program) + ' · ' + esc(J.gender) + (J.group ? ' · ' + esc(J.group) : '') + (J.selectedOnly ? ' (selected only)' : '') + '.</div>';
@@ -618,7 +658,7 @@
       busy(btn, false);
       if (!r.ok) { toast(r.error, true); if (r.auth) { setSession(s.role, null); route(); } return; }
       toast(program + ' · ' + section + ' · ' + group + ' — ' + (to === 'Completed' ? 'marked completed' : 'reopened'));
-      loadData(s).then(function () { if (current() === 'admin') paintAdminList(); else paintJudge(); });
+      loadData(s).then(function () { var c = current(); if (c === 'admin') paintAdminList(); else if (c === 'teacher') paintTeacher(); else paintJudge(); });
     });
   }
   function paintJudgeSum() {
@@ -650,7 +690,7 @@
   // 6. ADMIN
   // =====================================================================
   var A = { tab: 'overview', q: '', F: { q: '', group: '', cls: '', gender: '', program: '', status: '' }, resProg: '' };
-  var TABS = [['overview', 'Overview'], ['regs', 'Registrations'], ['entries', 'Program Entries'], ['scores', 'Scores'], ['results', 'Results'], ['logs', 'Staff Logs']];
+  var TABS = [['overview', 'Overview'], ['regs', 'Registrations'], ['entries', 'Program Entries'], ['scores', 'Scores'], ['results', 'Results'], ['programs', 'Programs'], ['logs', 'Staff Logs']];
   function viewAdmin() {
     var s = sessions.admin;
     if (!s) return loginCard('admin', 'Admin Panel', 'Full access to registrations, screening, check-in, scores and exports.',
@@ -679,6 +719,7 @@
     var b = $('#aBody');
     if (A.tab === 'overview') b.innerHTML = '<div id="aList"></div>';
     else if (A.tab === 'entries') b.innerHTML = entryToolbar(A.F) + '<p class="count" id="aCount"></p><div id="aList"></div>';
+    else if (A.tab === 'programs') b.innerHTML = secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
     else if (A.tab === 'results') b.innerHTML = secSeg(A.F.gender, 'aSec') + '<div class="toolbar t3"><select class="in" id="resProg">' + progOpts(A.resProg, 'All programs') + '</select></div><div id="aList"></div>';
     else b.innerHTML = (A.tab === 'regs' ? secSeg(A.F.gender, 'aSec') : '') + '<div class="toolbar t3"><input class="in search" type="search" data-aq="1" placeholder="Search…" value="' + esc(A.q) + '"></div><p class="count" id="aCount"></p><div id="aList"></div>';
     paintAdminList();
@@ -735,6 +776,8 @@
           '<td><button class="btn sm danger" data-delscore="' + i + '">Delete</button></td></tr>';
       }));
       A._scoreList = sl;
+    } else if (A.tab === 'programs') {
+      el.innerHTML = programStatusHtml(AB.programList(as, sc, D.programStatus || []), { gender: A.F.gender, program: A.resProg }, true);
     } else if (A.tab === 'results') {
       var rs = AB.computeResults(as, sc).filter(function (b) { return (!A.resProg || b.program === A.resProg) && (!A.F.gender || b.gender === A.F.gender); });
       A._results = rs;
