@@ -424,12 +424,12 @@
   var T = { q: '', group: '', cls: '', gender: '', program: '', status: '', view: 'entries' };
   function viewTeacher() {
     var s = sessFor('teacher');
-    if (!s) return loginCard('teacher', 'Teacher Screening', 'Screen participants for each program. Your login is recorded.',
+    if (!s) return loginCard('teacher', 'Teacher', 'Screen participants for each program. Your login is recorded.',
       fld('Teacher name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required') +
       fld('Special access code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Open screening portal');
     var tabs = '<div class="subtabs" id="tView"><button data-tview="entries" class="' + (T.view === 'entries' ? 'on' : '') + '">Screening</button>' +
       '<button data-tview="programs" class="' + (T.view === 'programs' ? 'on' : '') + '">Program status</button></div>';
-    view.innerHTML = head('Screening stage', 'Teacher Screening', 'Update each entry\'s status — changes save instantly to the sheet.', s) + tabs +
+    view.innerHTML = head('Screening stage', 'Teacher', 'Update each entry\'s status — changes save instantly to the sheet.', s) + tabs +
       (T.view === 'programs'
         ? secSeg(T.gender, 'eSec') + '<div class="toolbar t3"><select class="in" data-f="program">' + progOpts(T.program, 'All programs') + '</select></div><div id="tList"></div>'
         : '<div id="tStats" class="stats"></div>' + entryToolbar(T) + '<p class="count" id="tCount"></p><div class="list" id="tList"><div class="loading"><span class="spin dark"></span></div></div>');
@@ -504,9 +504,9 @@
   var V = { q: '', show: '', sec: '' };
   function viewVolunteer() {
     var s = sessFor('volunteer');
-    if (!s) return loginCard('volunteer', 'Volunteer Check-In', 'Mark arrivals at the desk. Your name and phone are logged.',
+    if (!s) return loginCard('volunteer', 'Check In', 'Mark arrivals at the desk. Your name and phone are logged.',
       fld('Volunteer name', 'name', 'autocomplete="name" required') + fld('Phone number', 'phone', 'type="tel" inputmode="tel" required'), 'Open check-in desk');
-    view.innerHTML = head('Check-in desk', 'Volunteer Check-In', 'Search by chest number, name or phone. You can mark attendance and add notes — registration details stay locked.', s) +
+    view.innerHTML = head('Check-in desk', 'Check In', 'Search by chest number, name or phone. You can mark attendance and add notes — registration details stay locked.', s) +
       '<div class="stats" id="vStats"></div>' + secSeg(V.sec, 'vSec') + '<div class="bigsearch" style="margin-bottom:12px"><input class="in" id="vq" type="search" inputmode="search" placeholder="Chest no., name or phone" value="' + esc(V.q) + '" autocomplete="off"></div>' +
       '<div class="row" style="margin-bottom:14px"><div class="seg" id="vShow">' + [['', 'All'], [AB.PRESENT, 'Present'], [AB.ABSENT, 'Not Present'], [AB.CHECKED_OUT, 'Checked out']].map(function (x) {
         return '<button data-show="' + x[0] + '" class="' + (V.show === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
@@ -619,7 +619,7 @@
   var J = { gender: 'Boys', group: '', selectedOnly: false, program: '', dirty: false };
   function viewJudge() {
     var s = sessFor('judge');
-    if (!s) return loginCard('judge', 'Judge Scoring', 'Choose the program you are judging. Participants are shown by chest number only.',
+    if (!s) return loginCard('judge', 'Judge Panel', 'Choose the program you are judging. Participants are shown by chest number only.',
       fld('Judge name', 'name', 'autocomplete="name" required') +
       '<div class="field"><label class="f" for="f_program">Program / event</label><select class="in" id="f_program" name="program">' + progOpts('', 'Select program') + '</select></div>' +
       fld('Judge code <span class="muted" style="font-weight:400">(only if you were given one)</span>', 'code', 'type="password" autocomplete="off"'), 'Start judging');
@@ -628,7 +628,7 @@
     J.program = program;
     var cat = AB.categoryOf(program), allowed = AB.gendersFor(program);
     if (allowed.indexOf(J.gender) < 0) J.gender = allowed[0] || 'Boys';
-    view.innerHTML = head('Judge scoring', 'Judging: ' + esc(program) + ' ' + catPill(cat), 'Score each chest number out of 100. You can change your marks until results are final.', s) +
+    view.innerHTML = head('Judge Panel', 'Judging: ' + esc(program) + ' ' + catPill(cat), 'Score each chest number out of 100. You can change your marks until results are final.', s) +
       '<div class="toolbar" style="grid-template-columns:' + (isAdmin ? '1.4fr ' : '') + 'auto 1fr auto">' +
       (isAdmin ? '<select class="in" id="jProg">' + progOpts(program) + '</select>' : '') +
       '<div class="seg" id="jGender">' + AB.SECTIONS.map(function (g) { var dis = allowed.indexOf(g) < 0; return '<button data-g="' + g + '" class="' + (J.gender === g ? 'on' : '') + '"' + (dis ? ' disabled title="' + esc(allowed[0] || '') + ' only" style="opacity:.4"' : '') + '>' + g + '</button>'; }).join('') + '</div>' +
