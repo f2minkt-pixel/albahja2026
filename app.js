@@ -41,8 +41,8 @@
   }
   function busy(btn, on, label) {
     if (!btn) return;
-    if (on) { btn.dataset.label = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>' + (label || 'Saving…'); }
-    else { btn.disabled = false; if (btn.dataset.label) btn.innerHTML = btn.dataset.label; }
+    if (on) { btn.dataset.label = btn.innerHTML; btn.disabled = true; btn.style.pointerEvents = 'none'; btn.innerHTML = '<span class="spin"></span>' + (label || 'Saving…'); }
+    else { btn.disabled = false; btn.style.pointerEvents = ''; if (btn.dataset.label) btn.innerHTML = btn.dataset.label; }
   }
 
   var D = null; // last portal data
@@ -518,8 +518,11 @@
       var g = e.target.dataset.guests; if (g == null) return;
       var r = D.registrations.filter(function (x) { return String(x.chest) === String(g); })[0];
       if (!r || r.checkin !== AB.PRESENT) return; // saved with "Mark present" for others
+      if (!lockChest(g)) return;
+      paintVolunteer();
       api('setGuests', { token: s.token, chest: g, guests: e.target.value }).then(function (res) {
-        if (!res.ok) { toast(res.error, true); return; }
+        unlockChest(g);
+        if (!res.ok) { toast(res.error, true); paintVolunteer(); return; }
         r.guests = res.guests; toast('Chest ' + g + ' · ' + res.guests + ' with them'); paintVolunteer();
       });
     };
@@ -559,6 +562,7 @@
       var on = r.checkin === AB.PRESENT, gone = r.checkin === AB.CHECKED_OUT;
       var items = AB.splitItems(r.sports).concat(AB.splitItems(r.arts));
       var hhmm = function (t) { return esc(String(t || '').slice(11, 16)); };
+      var wait = !!inFlight[String(r.chest)], dis = wait ? ' disabled' : '';
       return '<div class="vcard"><span class="chest lg">' + esc(r.chest) + '</span><div><div class="row" style="gap:8px"><b style="font-size:16px">' + esc(r.name) + '</b>' + ci(r.chest, r.checkin) + '</div>' +
         '<div class="meta small muted" style="margin-top:3px">' + esc(r.gender) + ' · ' + esc(r.cls) + ' · ' + esc(shortGroup(r.group)) + ' · ' + esc(r.phone) + '</div>' +
         '<div class="small" style="margin-top:6px">' + items.map(esc).join(' · ') + '</div>' +
@@ -566,21 +570,49 @@
           (gone && r.checkoutAt ? ' · Checked out ' + hhmm(r.checkoutAt) + ' by ' + esc(r.checkoutBy) : '') + '</div>' : '') + '</div>' +
         (gone ? '<div class="tog" style="text-align:center;font-weight:600;color:var(--muted);padding:11px 0">Checked out</div>'
           : '<div style="display:flex;flex-direction:column;gap:8px"><label class="small" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-weight:600">People with them' +
-            '<input class="in" style="width:72px;min-height:38px;padding:6px 10px;text-align:center" type="number" inputmode="numeric" min="0" max="30" data-guests="' + esc(r.chest) + '" value="' + esc(Number(r.guests) || 0) + '"></label>' +
-            '<button class="btn tog ' + (on ? 'isin' : 'isout') + '" data-toggle="' + esc(r.chest) + '">' + (on ? '✓ Checked in' : 'Mark present') + '</button>' +
-            (on ? '<button class="btn tog ghost" data-checkout="' + esc(r.chest) + '">Check out</button>' : '') + '</div>') +
+            '<input class="in" style="width:72px;min-height:38px;padding:6px 10px;text-align:center" type="number" inputmode="numeric" min="0" max="30" data-guests="' + esc(r.chest) + '" value="' + esc(Number(r.guests) || 0) + '"' + dis + '></label>' +
+            (wait ? '<button class="btn tog" disabled style="pointer-events:none;opacity:.7"><span class="spin"></span>Saving…</button>'
+              : (on ? '<div class="btn tog isin" style="cursor:default" aria-label="Checked in">✓ Checked in</div>'
+                : '<button class="btn tog isout" data-toggle="' + esc(r.chest) + '">Mark present</button>') +
+              (on ? '<button class="btn tog ghost" data-checkout="' + esc(r.chest) + '">Check out</button>' : '')) + '</div>') +
         (r.notes ? '<div class="notes">' + esc(r.notes) + '</div>' : '') +
-        '<div class="addnote"><input class="in" data-notefor="' + esc(r.chest) + '" placeholder="Note (optional) — saved with check-in / check-out, or press Add note" maxlength="300"><button class="btn sm ghost" data-addnote="' + esc(r.chest) + '">Add note</button></div></div>';
+        '<div class="addnote"><input class="in" data-notefor="' + esc(r.chest) + '" placeholder="Note (optional) — saved with check-in / check-out, or press Add note" maxlength="300"' + dis + '><button class="btn sm ghost" data-addnote="' + esc(r.chest) + '"' + dis + '>Add note</button></div></div>';
     }).join('') + (list.length > 150 ? '<div class="empty">Showing first 150 — search to narrow down.</div>' : '') : '<div class="empty">No student found. Check the chest number or try the name / phone.</div>';
+  }
+  /** One save at a time per child: buttons stay locked until the server answers. */
+  var inFlight = {};
+  function lockChest(c) { c = String(c); if (inFlight[c]) return false; inFlight[c] = 1; return true; }
+  function unlockChest(c) { delete inFlight[String(c)]; }
+  /** "Check-in done" pop-up; closes itself after a few seconds. */
+  function checkinDone(r, guests) {
+    var old = $('#ciDone'); if (old) old.remove();
+    var m = document.createElement('div'); m.className = 'modal'; m.id = 'ciDone';
+    m.innerHTML = '<div class="card" style="max-width:360px;text-align:center;padding:28px 24px">' +
+      '<div style="width:64px;height:64px;border-radius:50%;background:var(--ok-l);color:var(--ok);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:34px;font-weight:700">✓</div>' +
+      '<h2 style="margin-bottom:6px">Check-in done</h2>' +
+      '<div class="chest lg" style="margin:6px auto 10px">' + esc(r.chest) + '</div>' +
+      '<div style="font-weight:600">' + esc(r.name) + '</div>' +
+      '<div class="small muted" style="margin-top:4px">' + esc(r.gender) + ' · ' + esc(r.cls) + (guests ? ' · ' + guests + ' with them' : '') + ' · ' +
+      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</div>' +
+      '<button class="btn block" style="margin-top:18px" data-close>OK</button></div>';
+    document.body.appendChild(m);
+    var close = function () { if (m.parentNode) m.remove(); };
+    m.onclick = function (e) { if (e.target === m || e.target.closest('[data-close]')) close(); };
+    setTimeout(close, 4000);
   }
   function checkOut(btn, s) {
     var chest = btn.dataset.checkout;
     var r = D.registrations.filter(function (x) { return String(x.chest) === String(chest); })[0];
+    if (inFlight[String(chest)]) return;
     if (!confirm('Check out chest ' + chest + (r ? ' — ' + r.name : '') + '?\nThis is final for volunteers.')) return;
+    if (!lockChest(chest)) return;
     busy(btn, true, '');
     var ni = $('[data-notefor="' + chest + '"]');
-    api('checkin', { token: s.token, chest: chest, status: AB.CHECKED_OUT, note: ni ? ni.value.trim() : '' }).then(function (res) {
-      if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } return; }
+    var note = ni ? ni.value.trim() : '';
+    if (current() !== 'admin') paintVolunteer();
+    api('checkin', { token: s.token, chest: chest, status: AB.CHECKED_OUT, note: note }).then(function (res) {
+      unlockChest(chest);
+      if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } else if (current() !== 'admin') paintVolunteer(); return; }
       if (ni) ni.value = '';
       toast('Chest ' + chest + ' · checked out');
       loadData(s).then(function () { if (current() === 'admin') paintAdmin(); else paintVolunteer(); });
@@ -591,22 +623,29 @@
     var r = D.registrations.filter(function (x) { return String(x.chest) === String(chest); })[0];
     if (r.checkin === AB.CHECKED_OUT && current() !== 'admin') { toast('Chest ' + chest + ' is already checked out.', true); return; }
     var to = r.checkin === AB.PRESENT ? AB.ABSENT : AB.PRESENT;
+    if (!lockChest(chest)) return;
     var ni = $('[data-notefor="' + chest + '"]');
     busy(btn, true, '');
     var gi = $('[data-guests="' + chest + '"]');
-    api('checkin', { token: s.token, chest: chest, status: to, note: ni ? ni.value.trim() : '', guests: gi ? gi.value : '' }).then(function (res) {
-      if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } return; }
-      if (ni) ni.value = '';
-      toast('Chest ' + chest + ' · ' + (to === AB.PRESENT ? 'checked in' : 'marked not present'));
+    var note = ni ? ni.value.trim() : '', guests = gi ? gi.value : '';
+    if (current() !== 'admin') paintVolunteer();
+    api('checkin', { token: s.token, chest: chest, status: to, note: note, guests: guests }).then(function (res) {
+      unlockChest(chest);
+      if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } else if (current() !== 'admin') paintVolunteer(); return; }
+      if (to === AB.PRESENT) checkinDone(r, Number(guests) || 0);
+      else toast('Chest ' + chest + ' · marked not present');
       loadData(s).then(function () { if (current() === 'admin') paintAdmin(); else paintVolunteer(); });
     });
   }
   function addNote(chest, s) {
     var inp = $('[data-notefor="' + chest + '"]'); var text = inp && inp.value.trim();
     if (!text) { if (inp) inp.focus(); return; }
-    inp.disabled = true;
+    if (!lockChest(chest)) return;
+    paintVolunteer();
     api('note', { token: s.token, chest: chest, note: text }).then(function (r) {
-      inp.disabled = false;
+      unlockChest(chest);
+      if (!r.ok) paintVolunteer();
+      inp = $('[data-notefor="' + chest + '"]') || inp;
       if (!r.ok) { toast(r.error, true); return; }
       inp.value = ''; inp.blur(); toast('Note added to chest ' + chest);
       loadData(s).then(paintVolunteer);

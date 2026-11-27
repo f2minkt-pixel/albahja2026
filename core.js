@@ -306,6 +306,8 @@ var AB = (function () {
     regs.forEach(function (r) {
       if (!same(r.chest, p.chest)) return;
       reg = r;
+      // Once checked in, volunteers can only check out; only Admin can undo a check-in.
+      if (r.checkin === PRESENT && status === ABSENT && s.role !== 'admin') fail('Chest ' + r.chest + ' is already checked in. Use Check out.');
       // Check-out is final: only Admin can change it afterwards (to fix a mistake).
       if (r.checkin === CHECKED_OUT && s.role !== 'admin') fail('Chest ' + r.chest + ' is already checked out.');
       if (status === CHECKED_OUT && r.checkin !== PRESENT) fail('Chest ' + r.chest + ' is not checked in.');
