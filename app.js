@@ -514,6 +514,15 @@
       '<div class="list" id="vList"><div class="loading"><span class="spin dark"></span></div></div>';
     $('#vq').focus();
     view.oninput = function (e) { if (e.target.id === 'vq') { V.q = e.target.value; paintVolunteer(); } };
+    view.onchange = function (e) {
+      var g = e.target.dataset.guests; if (g == null) return;
+      var r = D.registrations.filter(function (x) { return String(x.chest) === String(g); })[0];
+      if (!r || r.checkin !== AB.PRESENT) return; // saved with "Mark present" for others
+      api('setGuests', { token: s.token, chest: g, guests: e.target.value }).then(function (res) {
+        if (!res.ok) { toast(res.error, true); return; }
+        r.guests = res.guests; toast('Chest ' + g + ' · ' + res.guests + ' with them'); paintVolunteer();
+      });
+    };
     view.onkeydown = function (e) { if (e.key === 'Enter' && e.target.dataset.notefor) { e.preventDefault(); addNote(e.target.dataset.notefor, s); } };
     view.onclick = function (e) {
       var sc = pickSec(e, 'vSec'); if (sc != null) { V.sec = sc; paintVolunteer(); return; }
@@ -530,8 +539,11 @@
     var regs = D.registrations || [];
     var pres = regs.filter(function (r) { return r.checkin === AB.PRESENT; }).length;
     var outs = regs.filter(function (r) { return r.checkin === AB.CHECKED_OUT; }).length;
-    $('#vStats').innerHTML = '<div class="stat"><b>' + regs.length + '</b><span>Registered</span></div><div class="stat g"><b>' + pres + '</b><span>Present</span></div>' +
-      '<div class="stat r"><b>' + (regs.length - pres - outs) + '</b><span>Not present</span></div><div class="stat"><b>' + outs + '</b><span>Checked out</span></div>';
+    var withThem = regs.reduce(function (n, r) { return n + (r.checkin === AB.PRESENT ? (Number(r.guests) || 0) : 0); }, 0);
+    $('#vStats').innerHTML = '<div class="stat g"><b>' + pres + '</b><span>Students checked in now</span></div>' +
+      '<div class="stat y"><b>' + (pres + withThem) + '</b><span>Headcount now<br><small>' + pres + ' students + ' + withThem + ' with them</small></span></div>' +
+      '<div class="stat r"><b>' + (regs.length - pres - outs) + '</b><span>Not present</span></div>' +
+      '<div class="stat"><b>' + outs + '</b><span>Checked out</span></div><div class="stat"><b>' + regs.length + '</b><span>Registered</span></div>';
     var q = V.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
     var list = regs.filter(function (r) {
       if (V.show && r.checkin !== V.show) return false;
@@ -550,10 +562,12 @@
       return '<div class="vcard"><span class="chest lg">' + esc(r.chest) + '</span><div><div class="row" style="gap:8px"><b style="font-size:16px">' + esc(r.name) + '</b>' + ci(r.chest, r.checkin) + '</div>' +
         '<div class="meta small muted" style="margin-top:3px">' + esc(r.gender) + ' · ' + esc(r.cls) + ' · ' + esc(shortGroup(r.group)) + ' · ' + esc(r.phone) + '</div>' +
         '<div class="small" style="margin-top:6px">' + items.map(esc).join(' · ') + '</div>' +
-        ((on || gone) && r.checkinAt ? '<div class="small muted" style="margin-top:4px">Checked in ' + hhmm(r.checkinAt) + ' by ' + esc(r.checkinBy) +
+        ((on || gone) && r.checkinAt ? '<div class="small muted" style="margin-top:4px">' + (Number(r.guests) ? Number(r.guests) + ' with them · ' : '') + 'Checked in ' + hhmm(r.checkinAt) + ' by ' + esc(r.checkinBy) +
           (gone && r.checkoutAt ? ' · Checked out ' + hhmm(r.checkoutAt) + ' by ' + esc(r.checkoutBy) : '') + '</div>' : '') + '</div>' +
         (gone ? '<div class="tog" style="text-align:center;font-weight:600;color:var(--muted);padding:11px 0">Checked out</div>'
-          : '<div style="display:flex;flex-direction:column;gap:8px"><button class="btn tog ' + (on ? 'isin' : 'isout') + '" data-toggle="' + esc(r.chest) + '">' + (on ? '✓ Checked in' : 'Mark present') + '</button>' +
+          : '<div style="display:flex;flex-direction:column;gap:8px"><label class="small" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-weight:600">People with them' +
+            '<input class="in" style="width:72px;min-height:38px;padding:6px 10px;text-align:center" type="number" inputmode="numeric" min="0" max="30" data-guests="' + esc(r.chest) + '" value="' + esc(Number(r.guests) || 0) + '"></label>' +
+            '<button class="btn tog ' + (on ? 'isin' : 'isout') + '" data-toggle="' + esc(r.chest) + '">' + (on ? '✓ Checked in' : 'Mark present') + '</button>' +
             (on ? '<button class="btn tog ghost" data-checkout="' + esc(r.chest) + '">Check out</button>' : '') + '</div>') +
         (r.notes ? '<div class="notes">' + esc(r.notes) + '</div>' : '') +
         '<div class="addnote"><input class="in" data-notefor="' + esc(r.chest) + '" placeholder="Note (optional) — saved with check-in / check-out, or press Add note" maxlength="300"><button class="btn sm ghost" data-addnote="' + esc(r.chest) + '">Add note</button></div></div>';
@@ -579,7 +593,8 @@
     var to = r.checkin === AB.PRESENT ? AB.ABSENT : AB.PRESENT;
     var ni = $('[data-notefor="' + chest + '"]');
     busy(btn, true, '');
-    api('checkin', { token: s.token, chest: chest, status: to, note: ni ? ni.value.trim() : '' }).then(function (res) {
+    var gi = $('[data-guests="' + chest + '"]');
+    api('checkin', { token: s.token, chest: chest, status: to, note: ni ? ni.value.trim() : '', guests: gi ? gi.value : '' }).then(function (res) {
       if (!res.ok) { busy(btn, false); toast(res.error, true); if (res.auth) { setSession(s.role, null); route(); } return; }
       if (ni) ni.value = '';
       toast('Chest ' + chest + ' · ' + (to === AB.PRESENT ? 'checked in' : 'marked not present'));

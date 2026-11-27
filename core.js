@@ -68,7 +68,7 @@ var AB = (function () {
       ['cls', 'Class'], ['group', 'Group'], ['phone', 'Parent Phone'], ['sports', 'Sports Items'],
       ['arts', 'Arts Items'], ['checkin', 'Check-In Status'], ['notes', 'Volunteer Notes'],
       ['checkinBy', 'Checked In By'], ['checkinAt', 'Check-In Time'], ['checkoutBy', 'Checked Out By'],
-      ['checkoutAt', 'Check-Out Time']],
+      ['checkoutAt', 'Check-Out Time'], ['guests', 'People With Them']],
     Program_Assignments: [['entry', 'Entry ID'], ['chest', 'Chest No'], ['name', 'Student Name'],
       ['gender', 'Gender'], ['cls', 'Class'], ['group', 'Group'], ['program', 'Program Name'],
       ['category', 'Category'], ['screening', 'Screening Status'], ['checkin', 'Check-In Status'],
@@ -317,6 +317,7 @@ var AB = (function () {
     if (!reg) fail('Chest number not found.');
     // Log the change with time and who did it in the notes, plus any note typed with it.
     var what = status === PRESENT ? 'Checked in' : status === CHECKED_OUT ? 'Checked out' : 'Marked not present';
+    if (status === PRESENT && p.guests != null && p.guests !== '') reg.guests = guestCount(p.guests);
     var extra = clean(p.note, 300);
     var line = '[' + env.now().slice(5, 16) + ' ' + s.name + '] ' + what + (extra ? ' — ' + extra : '');
     reg.notes = reg.notes ? reg.notes + '\n' + line : line;
@@ -325,6 +326,20 @@ var AB = (function () {
     rows.forEach(function (r) { if (same(r.chest, p.chest)) r.checkin = status; });
     db.save('Program_Assignments', rows);
     return { ok: true, status: status };
+  }
+
+  function guestCount(v) {
+    var n = Math.floor(Number(v));
+    if (isNaN(n) || n < 0 || n > 30) fail('People with them must be a number from 0 to 30.');
+    return n;
+  }
+  /** How many people came with the child (parents, siblings not competing). Counted in the headcount while checked in. */
+  function setGuests(db, env, s, p) {
+    var n = guestCount(p.guests), regs = db.load('Registrations'), hit = false;
+    regs.forEach(function (r) { if (same(r.chest, p.chest)) { r.guests = n; hit = true; } });
+    if (!hit) fail('Chest number not found.');
+    db.save('Registrations', regs);
+    return { ok: true, guests: n };
   }
 
   function note(db, env, s, p) {
@@ -476,7 +491,7 @@ var AB = (function () {
     return { ok: true, results: res, programs: programs };
   }
 
-  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1 };
+  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1, setGuests: 1 };
   var ROLES = {
     data: ['admin', 'teacher', 'volunteer', 'judge'],
     screen: ['admin', 'teacher'],
@@ -484,9 +499,9 @@ var AB = (function () {
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
     updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
-    setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin']
+    setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin'], setGuests: ['admin', 'volunteer']
   };
-  var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha };
+  var FNS = { data: data, screen: screen, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
 
   function handle(db, env, action, p) {
     p = p || {};
