@@ -37,7 +37,19 @@ a{color:var(--green-d)}
 .brand img{width:38px;height:44px;object-fit:contain}
 .brand b{display:block;font-size:18px;letter-spacing:.3px;line-height:1.1}
 .brand small{display:block;color:var(--gold);font-size:11px;letter-spacing:.6px;text-transform:uppercase;font-weight:600}
-body[data-view=register] nav.tabs{display:none!important}
+body[data-view=register] nav.tabs,body[data-view=home] nav.tabs{display:none!important}
+.home{max-width:760px;margin:10px auto 0}
+.home .tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+@media (max-width:560px){.home .tiles{grid-template-columns:1fr}}
+.tile{display:flex;align-items:center;gap:14px;background:#fff;border-radius:18px;box-shadow:var(--shadow);padding:20px;text-decoration:none;color:var(--ink);border:2px solid transparent;transition:border-color .15s,transform .05s}
+.tile:hover{border-color:var(--green)}
+.tile:active{transform:translateY(1px)}
+.tile .ic{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;flex:none;font-size:24px}
+.tile b{display:block;font-size:17px}
+.tile span{font-size:13px;color:var(--muted)}
+.tile.main{grid-column:1/-1;background:var(--green);color:#fff}
+.tile.main span{color:#d8ecd9}
+.tile.main .ic{background:var(--gold);color:var(--green-dd)}
 nav.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-left:auto;padding:6px 0}
 nav.tabs::-webkit-scrollbar{display:none}
 nav.tabs a{flex:none;display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;color:#d9ead9;text-decoration:none;font-size:13.5px;font-weight:500;white-space:nowrap}
@@ -299,7 +311,7 @@ footer{padding:24px 0 40px;text-align:center;font-size:12.5px;color:var(--muted)
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#register">
+    <a class="brand" href="#home">
       <img src="assets/logo.png" alt="Al Bahja logo">
       <span><b>Al Bahja</b><small>Madrasa Meet '26</small></span>
     </a>

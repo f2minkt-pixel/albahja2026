@@ -136,7 +136,7 @@
   var timer = null;
   function every(fn) { clearInterval(timer); timer = setInterval(function () { if (document.visibilityState === 'visible') fn(); }, REFRESH); }
   function route() {
-    var v = location.hash.replace('#', '') || 'register';
+    var v = location.hash.replace('#', '') || 'home';
     if (!VIEWS[v]) v = 'register';
     document.body.dataset.view = v;
     $$('#nav a').forEach(function (a) { a.classList.toggle('on', a.dataset.v === v); });
@@ -149,6 +149,22 @@
     if (lo) { setSession(lo.dataset.logout, null); D = null; toast('Logged out'); route(); }
   });
   window.addEventListener('hashchange', function () { route(); window.scrollTo(0, 0); });
+
+  // =====================================================================
+  // 0. START SCREEN
+  // =====================================================================
+  function viewHome() {
+    var tile = function (href, cls, icon, iconBg, title, sub) {
+      return '<a class="tile ' + cls + '" href="' + href + '"><span class="ic" style="' + iconBg + '">' + icon + '</span><div><b>' + title + '</b><span>' + sub + '</span></div></a>';
+    };
+    view.innerHTML = '<section class="home"><div style="text-align:center"><img src="assets/logo.png" alt="Al Bahja" style="width:84px;height:100px;object-fit:contain;margin:0 auto 6px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.15));background:var(--green);border-radius:20px;padding:8px">' +
+      '<h2 style="font-size:26px;margin-top:10px">Al Bahja Madrasa Meet \'26</h2><p class="muted" style="margin:6px 0 0">Fri, 4 Dec 2026 · Saihat Istiraha, Dhahran–Jubail Highway</p></div>' +
+      '<div class="tiles">' +
+      tile('#register', 'main', '✍️', '', 'Student Registration', 'Register a child for arts and sports items') +
+      tile('#scoreboard', '', '🏆', 'background:var(--gold-l)', 'Live Scoreboard', 'Results and program status') +
+      tile('#teacher', '', '📋', 'background:#E7EEFB', 'Teacher Login', 'Screening, programs and students') +
+      '</div></section>';
+  }
 
   // =====================================================================
   // 1. REGISTRATION
@@ -603,7 +619,7 @@
     var all = filterEntries(Object.assign({}, T, { status: '' }));
     $$('#tStats [data-status]').forEach(function (b) { $('b', b).textContent = all.filter(function (a) { return a.screening === b.dataset.status; }).length; });
   }
-  function current() { return location.hash.replace('#', '') || 'register'; }
+  function current() { return location.hash.replace('#', '') || 'home'; }
 
   // =====================================================================
   // 4. VOLUNTEER CHECK-IN
@@ -769,7 +785,7 @@
     if (!s) return loginCard('judge', 'Judge Panel', 'Choose the program you are judging. Participants are shown by chest number only.',
       fld('Judge name', 'name', 'autocomplete="name" required') +
       '<div class="field"><label class="f" for="f_program">Program / event</label><select class="in" id="f_program" name="program">' + progOpts('', 'Select program') + '</select></div>' +
-      fld('Judge code', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Start judging');
+      fld('Program code <span class="muted" style="font-weight:400">(each program has its own code)</span>', 'code', 'type="password" inputmode="numeric" autocomplete="off" required'), 'Start judging');
     var isAdmin = s.role === 'admin';
     var program = isAdmin ? (J.program || AB.ARTS_BOYS[0]) : s.program;
     J.program = program;
@@ -874,7 +890,7 @@
   // 6. ADMIN
   // =====================================================================
   var A = { tab: 'overview', q: '', F: { q: '', group: '', cls: '', gender: '', program: '', status: '' }, resProg: '' };
-  var TABS = [['overview', 'Overview'], ['regs', 'Registrations'], ['entries', 'Program Entries'], ['scores', 'Scores'], ['results', 'Results'], ['programs', 'Programs'], ['logs', 'Staff Logs']];
+  var TABS = [['overview', 'Overview'], ['regs', 'Registrations'], ['entries', 'Program Entries'], ['scores', 'Scores'], ['results', 'Results'], ['programs', 'Programs'], ['judges', 'Judges'], ['logs', 'Staff Logs']];
   function viewAdmin() {
     var s = sessions.admin;
     if (!s) return loginCard('admin', 'Admin Panel', 'Full access to registrations, screening, check-in, scores and exports.',
@@ -960,6 +976,20 @@
           '<td><button class="btn sm danger" data-delscore="' + i + '">Delete</button></td></tr>';
       }));
       A._scoreList = sl;
+    } else if (A.tab === 'judges') {
+      var logs = (D.staffLogs || []).filter(function (l) { return l.role === 'Judge'; });
+      var codes = D.judgeCodes || [];
+      setCount(codes.length, 'programs');
+      el.innerHTML = '<p class="muted small" style="margin:0 0 10px">Give each judge only the code for their program. Only Admin can see this page.</p>' +
+        table(['Program', 'Judge code', 'Judges logged in', ''], AB.allPrograms().filter(function (p) { return !A.q || p.toLowerCase().indexOf(A.q.toLowerCase()) >= 0; }).map(function (p) {
+          var c = codes.filter(function (x) { return x.program === p; })[0];
+          var who = {}; logs.forEach(function (l) { if (l.detail === 'Program: ' + p) who[l.name] = l.ts; });
+          var names = Object.keys(who);
+          return '<tr><td><b>' + esc(p) + '</b><div class="small muted">' + esc(AB.categoryOf(p)) + ' · ' + esc(AB.gendersFor(p).join(', ')) + '</div></td>' +
+            '<td><span class="chest" style="min-width:90px;letter-spacing:2px">' + esc(c ? c.code : '—') + '</span></td>' +
+            '<td class="small">' + (names.length ? names.map(function (n) { return '<div><b>' + esc(n) + '</b> <span class="muted">· last ' + esc(String(who[n]).slice(5, 16)) + '</span></div>'; }).join('') : '<span class="muted">No judge yet</span>') + '</td>' +
+            '<td><button class="btn sm ghost" data-newcode="' + esc(p) + '">New code</button></td></tr>';
+        }));
     } else if (A.tab === 'programs') {
       el.innerHTML = programStatusHtml(AB.programList(as, sc, D.programStatus || []), { gender: A.F.gender, program: A.resProg }, true);
     } else if (A.tab === 'results') {
@@ -990,6 +1020,17 @@
     if (e.target.closest('[data-reset]')) {
       if (!confirm('Delete ALL demo data in this browser?')) return;
       window.ABDemo.reset(); sessions = {}; store.set('sessions', {}); D = null; toast('Demo data cleared'); route(); return;
+    }
+    if ((t = e.target.closest('[data-newcode]'))) {
+      var prog = t.dataset.newcode;
+      if (!confirm('Give "' + prog + '" a new judge code?\nThe old code stops working for new logins.')) return;
+      busy(t, true, '');
+      api('setJudgeCode', { token: s.token, program: prog }).then(function (r) {
+        busy(t, false);
+        if (!r.ok) { toast(r.error, true); return; }
+        toast(prog + ' · new code ' + r.code); loadData(s).then(paintAdminList);
+      });
+      return;
     }
     if ((t = e.target.closest('[data-done]'))) { setProgramStatus(t, s, t.dataset.prog, t.dataset.section, t.dataset.done, t.dataset.to); return; }
     if ((t = e.target.closest('[data-toggle]'))) { toggleCheckin(t, s); return; }
@@ -1051,6 +1092,6 @@
     toast('Exported ' + tab + ' (' + (rows || []).length + ' rows)');
   }
 
-  var VIEWS = { register: viewRegister, scoreboard: viewScoreboard, teacher: viewTeacher, volunteer: viewVolunteer, judge: viewJudge, admin: viewAdmin };
+  var VIEWS = { home: viewHome, register: viewRegister, scoreboard: viewScoreboard, teacher: viewTeacher, volunteer: viewVolunteer, judge: viewJudge, admin: viewAdmin };
   route();
 })();

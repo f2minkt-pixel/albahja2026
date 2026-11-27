@@ -80,8 +80,26 @@ var AB = (function () {
       ['avg', 'Average Score'], ['total', 'Total Score'], ['judges', 'Judges'], ['updated', 'Updated']],
     Staff_Logs: [['role', 'Role'], ['name', 'Name'], ['phone', 'Phone'], ['ts', 'Login Time'], ['detail', 'Detail']],
     Program_Status: [['program', 'Program Name'], ['section', 'Section'], ['group', 'Group'], ['status', 'Status'],
-      ['by', 'Marked By'], ['ts', 'Time']]
+      ['by', 'Marked By'], ['ts', 'Time']],
+    Judge_Codes: [['program', 'Program Name'], ['code', 'Judge Code'], ['updated', 'Updated']]
   };
+
+  /** Each program has its own 6-digit judge code. Missing codes are created automatically. */
+  function newCode(used, rnd) {
+    for (var i = 0; i < 1000; i++) { var c = String(100000 + Math.floor(rnd() * 900000)); if (!used[c]) return c; }
+    fail('Could not create a judge code.');
+  }
+  function judgeCodes(db, env) {
+    var rows = db.load('Judge_Codes'), have = {}, used = {}, changed = false;
+    rows.forEach(function (r) { have[r.program] = 1; used[String(r.code)] = 1; });
+    allPrograms().forEach(function (p) {
+      if (have[p]) return;
+      var c = newCode(used, env.random); used[c] = 1;
+      rows.push({ program: p, code: c, updated: env.now() }); changed = true;
+    });
+    if (changed) db.save('Judge_Codes', rows);
+    return rows;
+  }
   function statusKey(program, section, group) { return program + '|' + section + '|' + group; }
   function statusMap(rows) { var m = {}; rows.forEach(function (r) { m[statusKey(r.program, r.section, r.group)] = r; }); return m; }
 
@@ -259,7 +277,8 @@ var AB = (function () {
     } else if (role === 'judge') {
       if (name.length < 2) fail('Please enter your name.');
       if (allPrograms().indexOf(p.program) < 0) fail('Please choose the program you are judging.');
-      if (sec.judgeCode && String(p.code || '').trim() !== sec.judgeCode) bad('Incorrect judge code.');
+      var jc = judgeCodes(db, env).filter(function (r) { return r.program === p.program; })[0];
+      if (!jc || String(p.code || '').trim() !== String(jc.code)) bad('Incorrect code for ' + p.program + '. Ask the organisers for this program\'s code.');
       sess.program = p.program;
       detail = 'Program: ' + p.program;
     } else fail('Unknown role.');
@@ -287,6 +306,7 @@ var AB = (function () {
       out.scores = db.load('Scores');
       out.staffLogs = db.load('Staff_Logs');
       out.sheetUrl = env.sheetUrl ? env.sheetUrl() : '';
+      out.judgeCodes = judgeCodes(db, env);
     }
     return out;
   }
@@ -313,6 +333,19 @@ var AB = (function () {
     if (!hit) fail('Entries not found.');
     db.save('Program_Assignments', rows);
     return { ok: true, changed: hit };
+  }
+
+  /** Admin: give a program a new judge code (random, or a chosen 4–8 digit code). */
+  function setJudgeCode(db, env, s, p) {
+    if (allPrograms().indexOf(p.program) < 0) fail('Unknown program.');
+    var rows = judgeCodes(db, env), used = {};
+    rows.forEach(function (r) { if (r.program !== p.program) used[String(r.code)] = 1; });
+    var code = p.code ? String(p.code).trim() : newCode(used, env.random);
+    if (!/^\d{4,8}$/.test(code)) fail('Code must be 4 to 8 digits.');
+    if (used[code]) fail('That code is already used by another program.');
+    rows.forEach(function (r) { if (r.program === p.program) { r.code = code; r.updated = env.now(); } });
+    db.save('Judge_Codes', rows);
+    return { ok: true, code: code };
   }
 
   function checkin(db, env, s, p) {
@@ -508,7 +541,7 @@ var AB = (function () {
     return { ok: true, results: res, programs: programs };
   }
 
-  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1, setGuests: 1, screenMany: 1 };
+  var WRITES = { register: 1, login: 1, screen: 1, checkin: 1, note: 1, score: 1, updateReg: 1, deleteReg: 1, deleteScore: 1, setStatus: 1, cleanupRawdha: 1, setGuests: 1, screenMany: 1, setJudgeCode: 1 };
   var ROLES = {
     data: ['admin', 'teacher', 'volunteer', 'judge'],
     screen: ['admin', 'teacher'], screenMany: ['admin', 'teacher'],
@@ -516,9 +549,9 @@ var AB = (function () {
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
     updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
-    setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin'], setGuests: ['admin', 'volunteer']
+    setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin'], setGuests: ['admin', 'volunteer'], setJudgeCode: ['admin']
   };
-  var FNS = { data: data, screen: screen, screenMany: screenMany, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
+  var FNS = { data: data, screen: screen, screenMany: screenMany, setJudgeCode: setJudgeCode, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
 
   function handle(db, env, action, p) {
     p = p || {};
