@@ -285,13 +285,39 @@
       R.step = to; viewRegister(); $('#regCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); return;
     }
     if (e.target.closest('#submitReg')) {
-      var btn = $('#submitReg'); busy(btn, true, 'Submitting…');
-      api('register', { name: R.name, gender: R.gender, phone: R.phone, cls: R.cls, group: R.group, sports: R.sports, arts: R.arts }).then(function (r) {
+      var btn = $('#submitReg');
+      submitRegistration(btn, false);
+    }
+  }
+  function submitRegistration(btn, confirmDifferent) {
+      busy(btn, true, 'Submitting…');
+      api('register', { name: R.name, gender: R.gender, phone: R.phone, cls: R.cls, group: R.group, sports: R.sports, arts: R.arts, confirmDifferent: !!confirmDifferent }).then(function (r) {
         busy(btn, false);
+        if (r.needConfirm) { askDifferentChild(r.existing, btn); return; }
         if (!r.ok) { $('#submitErr').innerHTML = '<div class="notice bad">' + esc(r.error) + '</div>'; return; }
         R.receipt = r.receipt; R.emailed = r.emailed; R.step = 4; viewRegister(); window.scrollTo(0, 0);
       });
-    }
+  }
+  /** Possible duplicate: tell the person registering and let them decide. */
+  function askDifferentChild(ex, btn) {
+    var m = document.createElement('div'); m.className = 'modal';
+    m.innerHTML = '<div class="card" style="max-width:440px"><div style="font-size:34px;line-height:1;margin-bottom:6px">⚠️</div>' +
+      '<h3 style="margin-bottom:8px">This child may already be registered</h3>' +
+      '<p class="small" style="margin:0 0 10px">A very similar registration already exists:</p>' +
+      '<div class="item" style="box-shadow:none;background:var(--gold-l);margin-bottom:12px"><span class="chest">' + esc(ex.chest) + '</span><div class="who"><b>' + esc(ex.name) + '</b>' +
+      '<div class="meta"><span>' + esc(ex.gender) + '</span><span>' + esc(ex.cls) + '</span><span>' + esc(shortGroup(ex.group)) + '</span></div></div></div>' +
+      '<p class="small muted" style="margin:0 0 14px">You are registering <b>' + esc(R.name) + '</b>. If this is the <b>same child</b>, do not register again — ask a teacher to edit Chest ' + esc(ex.chest) + '.</p>' +
+      '<div style="display:flex;flex-direction:column;gap:8px"><button class="btn ghost" data-same>Same child — don\'t register</button>' +
+      '<button class="btn gold" data-diff>It\'s a different child — register anyway</button></div></div>';
+    document.body.appendChild(m);
+    m.onclick = function (e) {
+      if (e.target.closest('[data-same]') || e.target === m) {
+        m.remove();
+        $('#submitErr').innerHTML = '<div class="notice warn">Not registered. ' + esc(ex.name) + ' is already Chest ' + esc(ex.chest) + '. To change details or items, please ask a teacher.</div>';
+        return;
+      }
+      if (e.target.closest('[data-diff]')) { m.remove(); submitRegistration(btn, true); }
+    };
   }
   function renderReceipt() {
     var g = R.receipt.reg, en = R.receipt.entries;
@@ -574,7 +600,7 @@
       return '<button class="item" data-student="' + esc(r.chest) + '" style="border:0;width:100%;text-align:left;cursor:pointer">' +
         '<span class="chest">' + esc(r.chest) + '</span><div class="who"><b>' + esc(r.name) + '</b><div class="meta"><span>' + esc(r.gender) + '</span><span>' + esc(r.cls) +
         '</span><span>' + esc(shortGroup(r.group)) + '</span><span>' + en.length + ' item' + (en.length === 1 ? '' : 's') + ' · ' + sel + ' selected</span></div></div>' +
-        '<div class="acts">' + ci(r.chest, r.checkin) + '<span class="pill">View ›</span></div></button>';
+        '<div class="acts">' + ci(r.chest, r.checkin) + '<span class="pill">View / Edit ›</span></div></button>';
     }).join('') : '<div class="empty">No student found.</div>';
   }
   function openStudent(chest, s) {
@@ -610,7 +636,7 @@
       '</dl></div>' +
       '<h3 style="margin:16px 0 4px">Items (' + en.length + ')</h3><div>' + (items || '<p class="muted small">No items.</p>') + '</div>' +
       '<h3 style="margin:16px 0 6px">Notes</h3>' + (r.notes ? '<div class="notes" style="background:var(--gold-l);border-radius:10px;padding:10px 12px;white-space:pre-line;font-size:13px">' + esc(r.notes) + '</div>' : '<p class="muted small" style="margin:0">No notes.</p>') +
-      (s.role === 'admin' ? '<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn ghost" data-editstudent="' + esc(r.chest) + '">Edit details</button></div>' : '') +
+      (s.role === 'admin' || s.role === 'teacher' ? '<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn ghost" data-editstudent="' + esc(r.chest) + '">Edit details</button></div>' : '') +
       '</div>';
     document.body.appendChild(m);
     m.onclick = function (e) {
@@ -1252,19 +1278,46 @@
       '<div class="field"><label class="f">Parent phone</label><input class="in" name="phone" type="tel" value="' + esc(r.phone) + '"></div>' +
       '<div class="grid2"><div class="field"><label class="f">Class</label><select class="in" name="cls">' + opts(AB.CLASSES, r.cls) + '</select></div>' +
       '<div class="field"><label class="f">Group</label><select class="in" name="group">' + opts(AB.GROUPS, r.group) + '</select></div></div>' +
+      '<div id="editItems"></div>' +
       '<div class="field"><label class="f">Volunteer notes</label><textarea class="in" name="notes" rows="3">' + esc(r.notes) + '</textarea></div>' +
-      '<p class="hint">Gender and items can\'t be changed here — delete and re-register if needed.</p><div id="editErr"></div>' +
+      '<p class="hint">Gender can\'t be changed. Removing an item also removes its marks.</p><div id="editErr"></div>' +
       '<div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn" type="submit">Save changes</button></div></form>';
     document.body.appendChild(m);
+    var pick = { sports: AB.splitItems(r.sports), arts: AB.splitItems(r.arts) };
+    var paintItems = function () {
+      var cls = $('[name=cls]', m).value, raw = AB.isRawdha(cls), al = AB.artsFor(r.gender, cls);
+      if (r.gender !== 'Boys' || raw) pick.sports = [];
+      pick.arts = pick.arts.filter(function (x) { return al.indexOf(x) >= 0; });
+      var box = function (cat, list, title) {
+        var sel = pick[cat], full = sel.length >= AB.MAX_PER_CATEGORY;
+        return '<div class="cathead" style="margin:12px 0 8px"><h3 style="font-size:14px">' + title + '</h3><span class="counter' + (full ? ' full' : '') + '">' + sel.length + ' / 3</span></div><div class="picks">' +
+          list.map(function (it) { var on = sel.indexOf(it) >= 0, off = !on && full;
+            return '<label class="pick' + (on ? ' on' : '') + (off ? ' off' : '') + '" style="min-height:42px;padding:8px 10px;font-size:13px"><input type="checkbox" data-ecat="' + cat + '" data-eitem="' + esc(it) + '"' + (on ? ' checked' : '') + (off ? ' disabled' : '') + '>' + esc(it) + '</label>';
+          }).join('') + '</div>';
+      };
+      $('#editItems', m).innerHTML = (r.gender === 'Boys' && !raw ? box('sports', AB.SPORTS, 'Sports items') : '') + box('arts', al, 'Arts items');
+    };
+    paintItems();
+    m.onchange = function (e) {
+      if (e.target.name === 'cls') { paintItems(); return; }
+      var c = e.target.dataset.ecat; if (!c) return;
+      if (e.target.checked && pick[c].length < AB.MAX_PER_CATEGORY && pick[c].indexOf(e.target.dataset.eitem) < 0) pick[c].push(e.target.dataset.eitem);
+      if (!e.target.checked) pick[c] = pick[c].filter(function (x) { return x !== e.target.dataset.eitem; });
+      paintItems();
+    };
     m.onclick = function (e) { if (e.target === m || e.target.closest('[data-close]')) m.remove(); };
     $('#editForm').onsubmit = function (e) {
       e.preventDefault();
       var patch = {}; $$('[name]', m).forEach(function (el) { patch[el.name] = el.value; });
+      patch.sports = pick.sports; patch.arts = pick.arts;
+      var before = AB.splitItems(r.sports).concat(AB.splitItems(r.arts)), after = pick.sports.concat(pick.arts);
+      var gone = before.filter(function (x) { return after.indexOf(x) < 0; });
+      if (gone.length && !confirm('Remove ' + gone.join(', ') + ' from chest ' + r.chest + '?\nAny marks for these items will also be removed.')) return;
       var btn = $('button[type=submit]', m); busy(btn, true);
       api('updateReg', { token: s.token, chest: r.chest, patch: patch }).then(function (x) {
         busy(btn, false);
         if (!x.ok) { $('#editErr').innerHTML = '<div class="notice bad" style="margin-bottom:12px">' + esc(x.error) + '</div>'; return; }
-        m.remove(); toast('Saved chest ' + r.chest); loadData(s).then(paintAdmin);
+        m.remove(); toast('Saved chest ' + r.chest); loadData(s).then(function () { if (current() === 'admin') paintAdmin(); else paintTeacher(); });
       });
     };
   }

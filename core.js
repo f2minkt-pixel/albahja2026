@@ -123,6 +123,30 @@ var AB = (function () {
   }
   /** Name key for duplicate checks: ignores case, extra spaces and dots. */
   function nameKey(s) { return String(s || '').toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim(); }
+  /** Letters only, lower case (e.g. "Ehan  Muhammed." -> "ehanmuhammed"). */
+  function letters(s) { return String(s || '').toLowerCase().replace(/[^\p{L}]/gu, ''); }
+  /** Spelling-insensitive key: letters only, doubled letters collapsed, vowels dropped (Muhammad = Muhammed = Mohamed). */
+  function looseKey(s) { return letters(s).replace(/(.)\1+/gu, '$1').replace(/[aeiouy]/g, ''); }
+  function editDistance(a, b) {
+    if (Math.abs(a.length - b.length) > 3) return 99;
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  /** Same child? Same phone and the same or nearly the same name (spelling variants, 1–2 letters different). */
+  function isSameChild(r, name, phone, cls, gender) {
+    // Same name (spelling-insensitive) in the same class and gender = same child, even from another parent's phone.
+    if (cls && r.cls === cls && r.gender === gender && (letters(r.name) === letters(name) || (looseKey(r.name) && looseKey(r.name) === looseKey(name)))) return true;
+    if (!same(normPhone(r.phone), phone)) return false;
+    if (nameKey(r.name) === nameKey(name) || letters(r.name) === letters(name)) return true;
+    if (looseKey(r.name) && looseKey(r.name) === looseKey(name)) return true;
+    return editDistance(letters(r.name), letters(name)) <= 2;
+  }
   function fail(msg) { var e = new Error(msg); e.userFacing = true; throw e; }
   function clean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max || 120); }
   function normPhone(s) { return String(s == null ? '' : s).replace(/\D/g, ''); }
@@ -237,9 +261,17 @@ var AB = (function () {
     if (!sports.length && !arts.length) fail('Please select at least one item.');
 
     var regs = db.load('Registrations');
-    // Same phone is fine (siblings); only the same name AND the same phone is a duplicate.
-    var dup = regs.filter(function (r) { return same(normPhone(r.phone), phone) && nameKey(r.name) === nameKey(name); })[0];
-    if (dup) fail(name + ' is already registered with this phone number (Chest No ' + dup.chest + ').');
+    // No duplicates: same phone + same or nearly the same name is refused (siblings with different names are fine).
+    // Exactly the same name with the same phone = same child: always refused.
+    var exact = regs.filter(function (r) { return same(normPhone(r.phone), phone) && letters(r.name) === letters(name); })[0];
+    if (exact) fail('"' + exact.name + '" is already registered with this phone number (Chest No ' + exact.chest + '). Duplicate registration is not allowed. ' +
+      'To change items or details, please ask a teacher.');
+    // Very similar name: warn the person registering and let them confirm it is a different child.
+    var dup = regs.filter(function (r) { return isSameChild(r, name, phone, cls, gender); })[0];
+    if (dup && !p.confirmDifferent) {
+      return { ok: false, needConfirm: true, existing: { chest: dup.chest, name: dup.name, cls: dup.cls, gender: dup.gender, group: dup.group },
+        error: 'A very similar registration already exists: "' + dup.name + '" (' + dup.cls + ', Chest No ' + dup.chest + ').' };
+    }
 
     var used = {}; regs.forEach(function (r) { used[String(r.chest)] = 1; });
     var chest = pickChest({ has: function (k) { return !!used[k]; } }, env.random, gender);
@@ -455,11 +487,30 @@ var AB = (function () {
     if (patch.cls != null) { if (CLASSES.indexOf(patch.cls) < 0) fail('Invalid class.'); reg.cls = patch.cls; }
     if (patch.group != null) { if (GROUPS.indexOf(patch.group) < 0) fail('Invalid group.'); reg.group = patch.group; }
     if (patch.notes != null) reg.notes = String(patch.notes).slice(0, 2000);
+    var rows = db.load('Program_Assignments'), sc = db.load('Scores'), dropped = {};
+    if (patch.sports != null || patch.arts != null) {
+      var sports = uniq(patch.sports != null ? patch.sports : splitItems(reg.sports)), arts = uniq(patch.arts != null ? patch.arts : splitItems(reg.arts));
+      if ((reg.gender === 'Girls' || isRawdha(reg.cls)) && sports.length) fail(isRawdha(reg.cls) ? 'Rawdha has Arts items only.' : 'Sports items are open to boys only.');
+      var al = artsFor(reg.gender, reg.cls);
+      sports.forEach(function (x) { if (SPORTS.indexOf(x) < 0) fail('Unknown sports item: ' + x); });
+      arts.forEach(function (x) { if (al.indexOf(x) < 0) fail('Item not available: ' + x); });
+      if (sports.length > MAX_PER_CATEGORY) fail('Maximum 3 Sports items.');
+      if (arts.length > MAX_PER_CATEGORY) fail('Maximum 3 Arts items.');
+      if (!sports.length && !arts.length) fail('Please keep at least one item.');
+      var want = sports.concat(arts), have = {};
+      rows.forEach(function (r) { if (same(r.chest, p.chest)) have[r.program] = 1; });
+      rows = rows.filter(function (r) { if (same(r.chest, p.chest) && want.indexOf(r.program) < 0) { dropped[r.program] = 1; return false; } return true; });
+      want.forEach(function (prog) {
+        if (have[prog]) return;
+        rows.push({ entry: reg.chest + '-' + programCode(prog), chest: reg.chest, name: reg.name, gender: reg.gender, cls: reg.cls, group: reg.group,
+          program: prog, category: categoryOf(prog), screening: SCREENING[0], checkin: reg.checkin || ABSENT, screenedBy: '' });
+      });
+      reg.sports = sports.join(', '); reg.arts = arts.join(', ');
+      sc = sc.filter(function (x) { return !(same(x.chest, p.chest) && dropped[x.program]); }); // marks for removed items go too
+    }
     db.save('Registrations', regs);
-    var rows = db.load('Program_Assignments');
     rows.forEach(function (r) { if (same(r.chest, p.chest)) { r.name = reg.name; r.cls = reg.cls; r.group = reg.group; } });
     db.save('Program_Assignments', rows);
-    var sc = db.load('Scores');
     sc.forEach(function (r) { if (same(r.chest, p.chest)) { r.name = reg.name; r.group = reg.group; } });
     db.save('Scores', sc);
     stripRawdhaSports(db);
@@ -564,7 +615,7 @@ var AB = (function () {
     checkin: ['admin', 'volunteer'],
     note: ['admin', 'volunteer'],
     score: ['admin', 'judge'],
-    updateReg: ['admin'], deleteReg: ['admin'], deleteScore: ['admin'],
+    updateReg: ['admin', 'teacher'], deleteReg: ['admin'], deleteScore: ['admin'],
     setStatus: ['admin', 'judge', 'teacher'], cleanupRawdha: ['admin'], setGuests: ['admin', 'volunteer'], setJudgeCode: ['admin']
   };
   var FNS = { data: data, screen: screen, screenMany: screenMany, setJudgeCode: setJudgeCode, checkin: checkin, note: note, score: score, updateReg: updateReg, deleteReg: deleteReg, deleteScore: deleteScore, setStatus: setStatus, cleanupRawdha: cleanupRawdha, setGuests: setGuests };
@@ -593,7 +644,7 @@ var AB = (function () {
     MAX_PER_CATEGORY: MAX_PER_CATEGORY, TEAM_SPORTS: TEAM_SPORTS, SCREENING: SCREENING, PRESENT: PRESENT, ABSENT: ABSENT, CHECKED_OUT: CHECKED_OUT, POINTS: POINTS,
     SCHEMA: SCHEMA, programCode: programCode, categoryOf: categoryOf, allPrograms: allPrograms, splitItems: splitItems,
     computeResults: computeResults, classBoard: classBoard, starBoard: starBoard, handle: handle,
-    isFullName: isFullName, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
+    isFullName: isFullName, isSameChild: isSameChild, RAWDHA_CLASSES: RAWDHA_CLASSES, RAWDHA_GROUP: RAWDHA_GROUP, ALL_GROUPS: ALL_GROUPS,
     SECTIONS: SECTIONS, ARTS_RAWDHA: ARTS_RAWDHA, isRawdha: isRawdha, sectionOf: sectionOf, artsFor: artsFor,
     ALL_SPORTS: ALL_SPORTS, codeKey: codeKey, codeKeys: codeKeys, statusKey: statusKey, statusMap: statusMap, compGroup: compGroup, programList: programList
   };
